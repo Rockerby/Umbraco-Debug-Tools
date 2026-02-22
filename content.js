@@ -21,6 +21,26 @@
   // style has been injected, so they can all be cleaned up on stop.
   const pickCursorRoots = new Set();
 
+  // ── umb-debug-ext element injection ──────────────────────────────────────
+
+  let umbDebugExtInjected = false;
+
+  /**
+   * Inject umb-debug-ext.js as a <script type="module"> into the page.
+   * The script uses the page's import map to resolve @umbraco-cms/* modules,
+   * so it must run in the main page world (not the content script's isolated world).
+   * Guarded so it only happens once per page load.
+   */
+  function injectUmbDebugExt() {
+    if (umbDebugExtInjected) return;
+    umbDebugExtInjected = true;
+
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.src = chrome.runtime.getURL('umb-debug-ext.js');
+    (document.head || document.documentElement).appendChild(script);
+  }
+
   // ── Umbraco Detection ────────────────────────────────────────────────────
 
   function detectUmbraco() {
@@ -437,9 +457,12 @@
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     switch (msg.type) {
-      case 'detect-umbraco':
-        sendResponse({ detected: detectUmbraco() });
+      case 'detect-umbraco': {
+        const detected = detectUmbraco();
+        if (detected) injectUmbDebugExt();
+        sendResponse({ detected });
         break;
+      }
 
       case 'start-pick':
         startPickMode();
