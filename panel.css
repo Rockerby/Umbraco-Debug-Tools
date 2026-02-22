@@ -299,14 +299,101 @@ button svg { flex-shrink: 0; }
   cursor: pointer;
   font-size: 11px;
   user-select: none;
-  sticky: top;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .ctx-section-header:hover { background: #323236; }
-.ctx-section-header .ctx-name { color: var(--success); font-weight: 600; }
-.ctx-section-header .ctx-toggle { color: var(--text-muted); font-size: 9px; }
+.ctx-section-header .ctx-name { color: var(--success); font-weight: 600; font-family: 'Consolas', 'Courier New', monospace; }
+.ctx-section-header .ctx-toggle { color: var(--text-muted); font-size: 9px; flex-shrink: 0; }
 .ctx-section-body { padding: 0; }
 .ctx-section-body.collapsed { display: none; }
+
+/* Type badge on context header */
+.ctx-type-badge {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+/* ─── Context subsections (Methods / Properties) ─────────────────────────── */
+.ctx-subsection {
+  border-top: 1px solid var(--border);
+}
+
+.ctx-subsection-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 16px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ctx-subsection-header:hover { background: rgba(255,255,255,0.03); }
+.ctx-subsection-title { color: var(--text); font-weight: 500; }
+.ctx-count { color: var(--text-muted); font-size: 10px; }
+.ctx-subsection-body { padding: 2px 0; }
+.ctx-subsection-body.collapsed { display: none; }
+
+/* ─── Method rows ────────────────────────────────────────────────────────── */
+.ctx-method-row {
+  padding: 1px 12px 1px 28px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.ctx-method-row:hover { background: rgba(255,255,255,0.03); }
+.ctx-method-name { color: var(--key-color); }
+.ctx-method-parens { color: var(--text-muted); }
+
+/* ─── Property rows ──────────────────────────────────────────────────────── */
+.ctx-prop-row {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 1px 12px 1px 28px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.7;
+}
+.ctx-prop-row:hover { background: rgba(255,255,255,0.03); }
+.ctx-prop-key  { color: var(--key-color); }
+.ctx-prop-type { color: var(--text-muted); font-style: italic; font-size: 10px; }
+.ctx-prop-eq   { color: var(--text-muted); }
+
+/* Object-valued property with inline tree */
+.ctx-prop-obj-wrapper { display: flex; flex-direction: column; }
+.ctx-prop-row--obj {
+  padding-left: 12px;
+  cursor: pointer;
+}
+.ctx-prop-children {
+  margin-left: 28px;
+  border-left: 1px solid var(--border);
+}
+
+/* ─── Callable / primitive context display ───────────────────────────────── */
+.ctx-callable {
+  padding: 8px 16px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 11px;
+}
+
+.ctx-primitive {
+  padding: 6px 16px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 11px;
+}
 
 /* ─── Raw HTML pane ─────────────────────────────────────────────────────── */
 #raw-html {

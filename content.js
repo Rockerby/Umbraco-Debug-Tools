@@ -15,8 +15,9 @@
   let isPicking = false;
   let hoveredEl = null;
   let injectedDebugEl = null;
-  let pollTimer = null;
   let tooltip = null;
+  let extObserver = null;
+  let extFallbackTimer = null;
   // Tracks every root (document or ShadowRoot) where the pick-mode cursor
   // style has been injected, so they can all be cleaned up on stop.
   const pickCursorRoots = new Set();
@@ -35,9 +36,14 @@
     if (umbDebugExtInjected) return;
     umbDebugExtInjected = true;
 
+    const url = chrome.runtime.getURL('umb-debug-ext.js');
+    console.log('[UmbDevTools] Injecting umb-debug-ext.js as module script:', url);
+
     const script = document.createElement('script');
     script.type = 'module';
-    script.src = chrome.runtime.getURL('umb-debug-ext.js');
+    script.src = url;
+    script.addEventListener('load', () => console.log('[UmbDevTools] umb-debug-ext.js loaded OK'));
+    script.addEventListener('error', (e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
     (document.head || document.documentElement).appendChild(script);
   }
 
@@ -253,40 +259,95 @@
   // ── umb-debug injection ──────────────────────────────────────────────────
 
   function removeExistingDebug() {
-    clearPollTimer();
+    clearExtWatcher();
+    if (injectedDebugEl) injectedDebugEl.remove();
     document.querySelectorAll('[data-umb-devtools-debug]').forEach((el) => el.remove());
     injectedDebugEl = null;
+  }
+
+  function clearExtWatcher() {
+    if (extObserver) { extObserver.disconnect(); extObserver = null; }
+    if (extFallbackTimer) { clearTimeout(extFallbackTimer); extFallbackTimer = null; }
   }
 
   function injectDebug(targetEl) {
     removeExistingDebug();
 
-    const debugEl = document.createElement('umb-debug');
-    debugEl.setAttribute('dialog', '');
-    debugEl.setAttribute('visible', '');
-    debugEl.setAttribute('data-umb-devtools-debug', 'true');
-
-    // Make it invisible in the page itself — output only goes to DevTools panel.
-    // Using visibility:hidden keeps it in the layout / shadow tree so Umbraco
-    // can still resolve its context providers.
-    Object.assign(debugEl.style, {
-      position: 'absolute',
-      width: '0',
-      height: '0',
-      overflow: 'hidden',
-      opacity: '0',
-      pointerEvents: 'none',
-    });
-
-    // Insert as the first child so it sits inside the element's context tree.
-    targetEl.insertBefore(debugEl, targetEl.firstChild);
-    injectedDebugEl = debugEl;
-
     const info = elementInfo(targetEl);
     sendToPanel({ type: 'element-selected', element: info });
 
-    // Begin polling for rendered output
-    startPolling(debugEl);
+    // Inject <umb-debug-ext> first — it gives structured context data via the
+    // data-umb-debug-contexts attribute once the page world upgrades it.
+    // Fall back to the legacy <umb-debug> approach after a timeout.
+    injectExtDebug(targetEl);
+  }
+
+  const HIDDEN_STYLE = {
+    position: 'absolute',
+    width: '0',
+    height: '0',
+    overflow: 'hidden',
+    opacity: '0',
+    pointerEvents: 'none',
+  };
+
+  function injectExtDebug(targetEl) {
+    console.log('[UmbDevTools] injectExtDebug — target:', targetEl.tagName, targetEl.id || '(no id)');
+
+    const extEl = document.createElement('umb-debug-ext');
+    extEl.setAttribute('data-umb-devtools-debug', 'true');
+    Object.assign(extEl.style, HIDDEN_STYLE);
+    targetEl.insertBefore(extEl, targetEl.firstChild);
+    injectedDebugEl = extEl;
+
+    console.log('[UmbDevTools] <umb-debug-ext> inserted into DOM. Constructor tag:', extEl.constructor?.name ?? '(unknown — not yet upgraded)');
+    console.log('[UmbDevTools] Has data-umb-debug-contexts immediately?', extEl.hasAttribute('data-umb-debug-contexts'));
+
+    // The page world upgrades the element and its constructor calls #update()
+    // which sets data-umb-debug-contexts once contexts are collected.
+    // Check immediately in case upgrade was synchronous.
+    if (extEl.hasAttribute('data-umb-debug-contexts')) {
+      console.log('[UmbDevTools] Attribute already present — reading immediately');
+      sendExtContextData(extEl);
+      return;
+    }
+
+    // Watch for the attribute via MutationObserver (works across the
+    // content-script/page-world boundary since the DOM is shared).
+    extObserver = new MutationObserver((mutations) => {
+      console.log('[UmbDevTools] MutationObserver fired, mutations:', mutations.map(m => `${m.attributeName}=${extEl.getAttribute(m.attributeName)?.slice(0, 40)}`));
+      if (extEl.hasAttribute('data-umb-debug-contexts')) {
+        clearExtWatcher();
+        sendExtContextData(extEl);
+      }
+    });
+    extObserver.observe(extEl, { attributes: true, attributeFilter: ['data-umb-debug-contexts'] });
+    console.log('[UmbDevTools] MutationObserver watching for data-umb-debug-contexts');
+
+    // If umb-debug-ext never sets the attribute (e.g. module failed to load,
+    // or element is outside an Umbraco context tree), report an error.
+    extFallbackTimer = setTimeout(() => {
+      const hasAttr = extEl.hasAttribute('data-umb-debug-contexts');
+      const ctorName = extEl.constructor?.name ?? '(unknown)';
+      console.warn('[UmbDevTools] Timeout — no data-umb-debug-contexts after 5s. Has attribute:', hasAttr, '| Element constructor:', ctorName);
+      clearExtWatcher();
+      if (!hasAttr) {
+        sendToPanel({ type: 'ext-context-error', error: `umb-debug-ext produced no data (element constructor: ${ctorName}). Check the page console for errors.` });
+      }
+    }, 5000);
+  }
+
+  function sendExtContextData(extEl) {
+    const raw = extEl.getAttribute('data-umb-debug-contexts');
+    console.log('[UmbDevTools] sendExtContextData — raw attribute length:', raw?.length, 'preview:', raw?.slice(0, 100));
+    try {
+      const contexts = JSON.parse(raw);
+      console.log('[UmbDevTools] Parsed', contexts.length, 'contexts:', contexts.map(c => c.alias));
+      sendToPanel({ type: 'ext-context-data', contexts });
+    } catch (e) {
+      console.error('[UmbDevTools] Failed to parse context data:', e);
+      sendToPanel({ type: 'ext-context-error', error: 'Failed to parse context data from umb-debug-ext.' });
+    }
   }
 
   function elementInfo(el) {
@@ -304,152 +365,15 @@
     return { tag, id, classes, attrs };
   }
 
-  // ── Poll for umb-debug output ────────────────────────────────────────────
-
-  function startPolling(debugEl) {
-    let attempts = 0;
-    const maxAttempts = 60; // 30 s at 500 ms intervals
-    let lastContent = null;
-
-    pollTimer = setInterval(() => {
-      attempts++;
-
-      const output = readDebugOutput(debugEl);
-
-      if (output !== null && output !== lastContent) {
-        lastContent = output;
-        sendToPanel({ type: 'debug-output', output });
-      }
-
-      if (attempts >= maxAttempts) {
-        clearPollTimer();
-        if (lastContent === null) {
-          sendToPanel({
-            type: 'debug-output',
-            output: null,
-            error: 'umb-debug produced no output. Make sure this element is inside an Umbraco context tree.',
-          });
-        }
-      }
-    }, 500);
-  }
-
-  function clearPollTimer() {
-    if (pollTimer) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    }
-  }
-
-  /**
-   * Try multiple strategies to read what umb-debug has rendered.
-   * Returns a structured result object or null if nothing is available yet.
-   */
-  function readDebugOutput(debugEl) {
-    // Strategy 1: open shadow root (Umbraco 14+ Lit components)
-    if (debugEl.shadowRoot) {
-      const raw = debugEl.shadowRoot.innerHTML;
-      if (raw && raw.trim() && raw !== '<slot></slot>') {
-        return { source: 'shadow', html: raw, contexts: extractContexts(debugEl.shadowRoot) };
-      }
-    }
-
-    // Strategy 2: light DOM children added by Umbraco (older or polyfilled)
-    if (debugEl.childElementCount > 0) {
-      return { source: 'light', html: debugEl.innerHTML, contexts: null };
-    }
-
-    // Strategy 3: text content
-    const text = debugEl.textContent && debugEl.textContent.trim();
-    if (text) {
-      return { source: 'text', html: null, text, contexts: null };
-    }
-
-    // Strategy 4: introspect internal Lit/Umbraco state
-    const ctxData = extractContextsFromElement(debugEl);
-    if (ctxData) {
-      return { source: 'api', html: null, contexts: ctxData };
-    }
-
-    return null;
-  }
-
-  /**
-   * Walk a shadow root's DOM tree to pull out any rendered context blocks.
-   * umb-debug typically renders each context as a labelled section.
-   */
-  function extractContexts(shadowRoot) {
-    try {
-      const result = {};
-      // Common pattern: headings + pre/code blocks
-      const headings = shadowRoot.querySelectorAll('h3, h4, [class*="context-name"], [class*="label"]');
-      headings.forEach((h) => {
-        const key = h.textContent.trim();
-        const sibling = h.nextElementSibling;
-        if (sibling) {
-          const val = sibling.textContent.trim();
-          try { result[key] = JSON.parse(val); } catch { result[key] = val; }
-        }
-      });
-      return Object.keys(result).length ? result : null;
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Attempt to read Umbraco's internal context data from the element's
-   * JavaScript state (works when the custom element exposes its controller).
-   */
-  function extractContextsFromElement(el) {
-    try {
-      // Lit elements store their reactive properties on the instance
-      const possibleKeys = [
-        '_contexts', '__contexts', 'contexts',
-        '_contextData', 'contextData',
-        '_data', 'data',
-      ];
-      for (const key of possibleKeys) {
-        if (el[key] && typeof el[key] === 'object') {
-          return sanitizeForTransfer(el[key]);
-        }
-      }
-    } catch {
-      // Ignore cross-origin or proxy errors
-    }
-    return null;
-  }
-
-  /**
-   * Make an object safe to pass through chrome.runtime.sendMessage
-   * (removes non-serialisable values).
-   */
-  function sanitizeForTransfer(obj, depth = 0) {
-    if (depth > 5) return '[nested]';
-    if (obj === null || obj === undefined) return obj;
-    const type = typeof obj;
-    if (type === 'function') return '[Function]';
-    if (type === 'symbol') return '[Symbol]';
-    if (type !== 'object') return obj;
-    if (obj instanceof Error) return { message: obj.message };
-    if (Array.isArray(obj)) return obj.slice(0, 50).map((v) => sanitizeForTransfer(v, depth + 1));
-
-    const result = {};
-    let count = 0;
-    for (const key of Object.keys(obj)) {
-      if (count++ > 100) { result['__truncated__'] = true; break; }
-      try { result[key] = sanitizeForTransfer(obj[key], depth + 1); } catch { result[key] = '[Error reading]'; }
-    }
-    return result;
-  }
 
   // ── Messaging ────────────────────────────────────────────────────────────
 
   function sendToPanel(msg) {
+    console.log('[UmbDevTools] sendToPanel:', msg.type, msg);
     try {
       chrome.runtime.sendMessage(msg);
-    } catch {
-      // Extension context may have been invalidated
+    } catch (e) {
+      console.error('[UmbDevTools] sendToPanel failed (extension context invalidated?):', e);
     }
   }
 
@@ -459,6 +383,7 @@
     switch (msg.type) {
       case 'detect-umbraco': {
         const detected = detectUmbraco();
+        console.log('[UmbDevTools] detect-umbraco result:', detected);
         if (detected) injectUmbDebugExt();
         sendResponse({ detected });
         break;
@@ -481,11 +406,15 @@
         break;
 
       case 'refresh-output':
-        if (injectedDebugEl) {
-          const output = readDebugOutput(injectedDebugEl);
-          sendResponse({ output });
+        if (injectedDebugEl && injectedDebugEl.hasAttribute('data-umb-debug-contexts')) {
+          try {
+            const contexts = JSON.parse(injectedDebugEl.getAttribute('data-umb-debug-contexts'));
+            sendResponse({ contexts });
+          } catch {
+            sendResponse({ contexts: null });
+          }
         } else {
-          sendResponse({ output: null });
+          sendResponse({ contexts: null });
         }
         break;
 

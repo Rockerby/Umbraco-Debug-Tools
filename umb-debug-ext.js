@@ -20,19 +20,94 @@ class UmbDebugElementExt extends UmbLitElement {
   };
 
   constructor() {
+
+    console.log("here in constructor");
     super();
     this.visible = false;
     this.dialog = false;
     this._contexts = new Map();
     this._debugPaneOpen = false;
+
+    this.#update();
   }
 
+  connectedCallback(){
+    super.connectedCallback();
+    console.log("connected callback");
+    this.#update();
+
+  }
+
+
   #update() {
+    console.log("update called");
     this.dispatchEvent(
       new UmbContextDebugRequest((contexts) => {
+        console.log("callback with context...", contexts);
         this._contexts = contexts;
+        this.#exportContexts(contexts);
+
+        this.#getContextInfo('UmbSectionSidebarContext');
+
       }),
     );
+  }
+
+  #getContextInfo(contextAlias) {
+    this.consumeContext(contextAlias, (contextBack) => {
+      console.log(contextBack);
+    });
+  }
+  /**
+   * Serialize context data to a JSON attribute so the Chrome extension's
+   * content script (isolated world) can read it via the shared DOM.
+   */
+  #exportContexts(contexts) {
+    try {
+      const data = contextData(contexts);
+      const serialized = Array.from(data).map(({ alias, data: instance }) => {
+        const entry = { alias, type: instance.type };
+        if (instance.type === 'object') {
+          entry.methods = instance.methods ?? [];
+          entry.properties = (instance.properties ?? []).map((p) => {
+            const prop = { key: p.key, type: p.type };
+            if (p.value !== undefined) {
+              prop.value = this.#safeValue(p.value, 0);
+            }
+            return prop;
+          });
+        } else if (instance.type === 'primitive') {
+          entry.value = this.#safeValue(instance.value, 0);
+        }
+        return entry;
+      });
+      var s = JSON.stringify(serialized);
+      this.setAttribute('data-umb-debug-contexts', JSON.stringify(serialized));
+      console.log("Serialised the ocntexts",s);
+    } catch (ex) {
+      // Ignore serialization errors
+      console.log("Unable to add attr", ex)
+    }
+  }
+
+  #safeValue(val, depth) {
+    if (depth > 3) return '[nested]';
+    if (val === null || val === undefined) return null;
+    const type = typeof val;
+    if (type === 'function') return '[Function]';
+    if (type === 'symbol') return '[Symbol]';
+    if (type !== 'object') return val;
+    if (Array.isArray(val)) {
+      return val.slice(0, 20).map((v) => this.#safeValue(v, depth + 1));
+    }
+    const keys = Object.keys(val);
+    const result = {};
+    let count = 0;
+    for (const k of keys) {
+      if (count++ > 30) { result['...'] = `${keys.length - 30} more keys`; break; }
+      try { result[k] = this.#safeValue(val[k], depth + 1); } catch { result[k] = '[Error]'; }
+    }
+    return result;
   }
 
   #toggleDebugPane() {

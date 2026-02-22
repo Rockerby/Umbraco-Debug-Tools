@@ -14,39 +14,44 @@
 
   // ── Connect to background ────────────────────────────────────────────────
   const tabId = chrome.devtools.inspectedWindow.tabId;
-  const port  = chrome.runtime.connect({ name: `devtools-${tabId}` });
+  const port = chrome.runtime.connect({ name: `devtools-${tabId}` });
 
   function sendToContent(msg) {
-    port.postMessage(msg);
+    try {
+      port.postMessage(msg);
+    } catch (err) {
+      port = chrome.runtime.connect({ name: `devtools-${tabId}` });
+      port.postMessage(msg);
+    }
   }
 
   // ── DOM refs ─────────────────────────────────────────────────────────────
-  const $  = (id) => document.getElementById(id);
+  const $ = (id) => document.getElementById(id);
 
-  const statusBadge   = $('status-badge');
-  const statusText    = $('status-text');
-  const btnPick       = $('btn-pick');
-  const btnRefresh    = $('btn-refresh');
-  const btnClear      = $('btn-clear');
-  const btnCopy       = $('btn-copy');
-  const breadcrumb    = $('breadcrumb');
-  const bcContent     = $('bc-content');
-  const emptyState    = $('empty-state');
-  const emptyMessage  = $('empty-message');
-  const outputPanel   = $('output-panel');
-  const loadingBar    = $('loading-bar');
-  const bannerError   = $('banner-error');
+  const statusBadge = $('status-badge');
+  const statusText = $('status-text');
+  const btnPick = $('btn-pick');
+  const btnRefresh = $('btn-refresh');
+  const btnClear = $('btn-clear');
+  const btnCopy = $('btn-copy');
+  const breadcrumb = $('breadcrumb');
+  const bcContent = $('bc-content');
+  const emptyState = $('empty-state');
+  const emptyMessage = $('empty-message');
+  const outputPanel = $('output-panel');
+  const loadingBar = $('loading-bar');
+  const bannerError = $('banner-error');
   const bannerErrText = $('banner-error-text');
-  const bannerInfo    = $('banner-info');
+  const bannerInfo = $('banner-info');
   const bannerInfoTxt = $('banner-info-text');
-  const treeView      = $('tree-view');
-  const rawHtml       = $('raw-html');
-  const tabBtns       = document.querySelectorAll('.tab-btn[data-tab]');
+  const treeView = $('tree-view');
+  const rawHtml = $('raw-html');
+  const tabBtns = document.querySelectorAll('.tab-btn[data-tab]');
 
   // ── State ────────────────────────────────────────────────────────────────
-  let isUmbraco   = false;
-  let isPicking   = false;
-  let lastOutput  = null;     // raw output object from content script
+  let isUmbraco = false;
+  let isPicking = false;
+  let lastOutput = null;     // raw output object from content script
 
   // ── Init ─────────────────────────────────────────────────────────────────
   detectUmbraco();
@@ -156,6 +161,7 @@
 
   // ── Message handler ──────────────────────────────────────────────────────
   port.onMessage.addListener((msg) => {
+    console.log('[UmbDevTools panel] Received message:', msg.type, msg);
     switch (msg.type) {
 
       // Response to detect-umbraco
@@ -175,32 +181,34 @@
         hideInfo();
         showBreadcrumb(msg.element);
         btnRefresh.disabled = false;
-        btnClear.disabled   = false;
+        btnClear.disabled = false;
         setLoading(true);
         showEmpty(false);
         break;
 
-      // umb-debug output received (may be called multiple times as content renders)
-      case 'debug-output':
+      // Structured context data from <umb-debug-ext>
+      case 'ext-context-data':
         setLoading(false);
-        if (msg.error) {
-          showError(msg.error);
-        } else if (msg.output) {
-          hideError();
-          lastOutput = msg.output;
-          renderOutput(msg.output);
-        }
+        hideError();
+        lastOutput = { _ext: true, contexts: msg.contexts };
+        renderUmbExtContexts(msg.contexts);
+        break;
+
+      // umb-debug-ext failed to produce data within the timeout
+      case 'ext-context-error':
+        setLoading(false);
+        showError(msg.error);
         break;
 
       // Response to refresh-output
       case 'refresh-response':
         setLoading(false);
-        if (msg.output) {
+        if (msg.contexts) {
           hideError();
-          lastOutput = msg.output;
-          renderOutput(msg.output);
+          lastOutput = { _ext: true, contexts: msg.contexts };
+          renderUmbExtContexts(msg.contexts);
         } else {
-          showError('No output yet — the umb-debug element may still be rendering.');
+          showError('No context data yet — the element may still be rendering.');
         }
         break;
     }
@@ -247,7 +255,7 @@
   function showBreadcrumb(el) {
     breadcrumb.classList.remove('hidden');
     let html = `<span class="bc-tag">&lt;${el.tag}</span>`;
-    if (el.id)    html += `<span class="bc-id">#${el.id}</span>`;
+    if (el.id) html += `<span class="bc-id">#${el.id}</span>`;
     if (el.classes && el.classes.length)
       html += `<span class="bc-cls">.${el.classes.slice(0, 3).join('.')}</span>`;
     const attrKeys = Object.keys(el.attrs || {}).slice(0, 4);
@@ -282,7 +290,7 @@
     emptyState.classList.remove('hidden');
     outputPanel.classList.add('hidden');
     btnRefresh.disabled = true;
-    btnClear.disabled   = true;
+    btnClear.disabled = true;
     setLoading(false);
     hideError();
     hideInfo();
@@ -291,135 +299,68 @@
     rawHtml.textContent = '';
   }
 
-  // ── Output rendering ─────────────────────────────────────────────────────
+  // ── Umbraco ext context rendering ────────────────────────────────────────
 
-  function renderOutput(output) {
+  /**
+   * Render structured context data from <umb-debug-ext> — mirrors the layout
+   * of the Umbraco context debugger modal: one collapsible section per context,
+   * each with Methods (collapsed) and Properties (expanded) subsections.
+   *
+   * @param {Array<{alias, type, methods?, properties?, value?}>} contexts
+   */
+  function renderUmbExtContexts(contexts) {
+    console.log('[UmbDevTools panel] renderUmbExtContexts — count:', contexts?.length, contexts);
     showEmpty(false);
     outputPanel.classList.remove('hidden');
-
-    // -- Raw HTML tab --
-    if (output.html) {
-      rawHtml.textContent = formatHtml(output.html);
-    } else if (output.text) {
-      rawHtml.textContent = output.text;
-    } else {
-      rawHtml.textContent = '(no HTML output)';
-    }
-
-    // -- Tree tab --
     treeView.innerHTML = '';
 
-    if (output.contexts && typeof output.contexts === 'object') {
-      // Structured context map: { "ContextName": {...data} }
-      renderContextMap(output.contexts);
-    } else if (output.html) {
-      // Parse context data out of the HTML
-      const parsed = parseContextsFromHtml(output.html);
-      if (parsed && Object.keys(parsed).length) {
-        renderContextMap(parsed);
-      } else {
-        // Fall back: show the HTML as a plain tree
-        const wrapper = { 'umb-debug output': { _html: output.html } };
-        renderContextMap(wrapper);
-      }
-    } else if (output.text) {
-      // Try to parse text as JSON
-      try {
-        const obj = JSON.parse(output.text);
-        renderContextMap(typeof obj === 'object' ? obj : { value: obj });
-      } catch {
-        treeView.innerHTML = `<div style="padding:8px 12px;color:var(--text-muted)">${escHtml(output.text)}</div>`;
-      }
-    } else {
+    // Raw tab shows JSON for easy copying
+    rawHtml.textContent = JSON.stringify(contexts, null, 2);
+
+    if (!contexts || !contexts.length) {
       treeView.innerHTML =
-        '<div style="padding:8px 12px;color:var(--text-muted)">No structured context data found.</div>';
-    }
-  }
-
-  /**
-   * Parse umb-debug's rendered HTML to extract context names and their JSON data.
-   * Umbraco's umb-debug typically renders each context with a heading and
-   * a <pre> or <code> block containing JSON.
-   */
-  function parseContextsFromHtml(html) {
-    try {
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      const result = {};
-
-      // Pattern 1: heading followed by pre/code
-      const headings = doc.querySelectorAll('h1,h2,h3,h4,h5,label,[class*="name"],[class*="title"]');
-      headings.forEach((h) => {
-        const key = h.textContent.trim();
-        if (!key) return;
-        let next = h.nextElementSibling;
-        while (next) {
-          const text = next.textContent.trim();
-          if (text) {
-            try { result[key] = JSON.parse(text); }
-            catch { result[key] = text; }
-            break;
-          }
-          next = next.nextElementSibling;
-        }
-      });
-
-      if (Object.keys(result).length) return result;
-
-      // Pattern 2: definition lists
-      const dts = doc.querySelectorAll('dt');
-      dts.forEach((dt) => {
-        const dd = dt.nextElementSibling;
-        if (dd && dd.tagName === 'DD') {
-          const key = dt.textContent.trim();
-          const val = dd.textContent.trim();
-          try { result[key] = JSON.parse(val); }
-          catch { result[key] = val; }
-        }
-      });
-
-      if (Object.keys(result).length) return result;
-
-      // Pattern 3: try parsing the entire text as JSON
-      const allText = doc.body.textContent.trim();
-      if (allText) {
-        const parsed = JSON.parse(allText);
-        return typeof parsed === 'object' ? parsed : { data: parsed };
-      }
-    } catch {
-      // Ignore parse errors
-    }
-    return null;
-  }
-
-  /**
-   * Render a map of context name → data as collapsible sections, each with
-   * a JSON tree inside.
-   */
-  function renderContextMap(ctxMap) {
-    treeView.innerHTML = '';
-
-    if (!ctxMap || !Object.keys(ctxMap).length) {
-      treeView.innerHTML =
-        '<div style="padding:8px 12px;color:var(--text-muted)">No contexts found.</div>';
+        '<div style="padding:16px 12px;color:var(--text-muted)">No contexts found on this element.</div>';
       return;
     }
 
-    Object.keys(ctxMap).forEach((ctxName) => {
-      const section    = document.createElement('div');
+    contexts.forEach(({ alias, type, methods, properties, value }) => {
+      const section = document.createElement('div');
       section.className = 'ctx-section';
 
       const header = document.createElement('div');
       header.className = 'ctx-section-header';
       header.innerHTML =
         `<span class="ctx-toggle">▾</span>` +
-        `<span class="ctx-name">${escHtml(ctxName)}</span>`;
+        `<span class="ctx-name">${escHtml(alias)}</span>` +
+        `<span class="ctx-type-badge">${escHtml(type)}</span>`;
 
       const body = document.createElement('div');
       body.className = 'ctx-section-body';
 
-      // Build JSON tree for the value
-      const valueNode = buildTreeNode(ctxMap[ctxName], null, 0);
-      body.appendChild(valueNode);
+      if (type === 'function') {
+        const label = document.createElement('div');
+        label.className = 'ctx-callable';
+        label.textContent = 'Callable Function';
+        body.appendChild(label);
+      } else if (type === 'primitive') {
+        const row = document.createElement('div');
+        row.className = 'ctx-primitive';
+        row.appendChild(makeValueSpan(value, typeof value));
+        body.appendChild(row);
+      } else if (type === 'object') {
+        if (methods && methods.length) {
+          body.appendChild(buildMethodsSection(methods));
+        }
+        if (properties && properties.length) {
+          body.appendChild(buildPropertiesSection(properties));
+        }
+        if (!methods?.length && !properties?.length) {
+          const empty = document.createElement('div');
+          empty.className = 'ctx-callable';
+          empty.textContent = 'No methods or properties.';
+          body.appendChild(empty);
+        }
+      }
 
       header.addEventListener('click', () => {
         body.classList.toggle('collapsed');
@@ -431,6 +372,153 @@
       section.appendChild(body);
       treeView.appendChild(section);
     });
+  }
+
+  function buildMethodsSection(methods) {
+    const section = document.createElement('div');
+    section.className = 'ctx-subsection';
+
+    const header = document.createElement('div');
+    header.className = 'ctx-subsection-header';
+    header.innerHTML =
+      `<span class="ctx-toggle">▸</span>` +
+      `<span class="ctx-subsection-title">Methods</span>` +
+      `<span class="ctx-count">(${methods.length})</span>`;
+
+    const body = document.createElement('div');
+    body.className = 'ctx-subsection-body collapsed';
+
+    methods.forEach((name) => {
+      const row = document.createElement('div');
+      row.className = 'ctx-method-row';
+      row.innerHTML =
+        `<span class="ctx-method-name">${escHtml(name)}</span>` +
+        `<span class="ctx-method-parens">()</span>`;
+      body.appendChild(row);
+    });
+
+    header.addEventListener('click', () => {
+      body.classList.toggle('collapsed');
+      header.querySelector('.ctx-toggle').textContent =
+        body.classList.contains('collapsed') ? '▸' : '▾';
+    });
+
+    section.appendChild(header);
+    section.appendChild(body);
+    return section;
+  }
+
+  function buildPropertiesSection(properties) {
+    const section = document.createElement('div');
+    section.className = 'ctx-subsection';
+
+    const header = document.createElement('div');
+    header.className = 'ctx-subsection-header';
+    header.innerHTML =
+      `<span class="ctx-toggle">▾</span>` +
+      `<span class="ctx-subsection-title">Properties</span>` +
+      `<span class="ctx-count">(${properties.length})</span>`;
+
+    const body = document.createElement('div');
+    body.className = 'ctx-subsection-body';
+
+    properties.forEach(({ key, type, value }) => {
+      if (type === 'object' && value !== null && typeof value === 'object') {
+        // Object-valued property — render as a collapsible tree row
+        body.appendChild(buildPropObjectRow(key, value));
+      } else {
+        const row = document.createElement('div');
+        row.className = 'ctx-prop-row';
+
+        const keyEl = document.createElement('span');
+        keyEl.className = 'ctx-prop-key';
+        keyEl.textContent = key;
+
+        const typeEl = document.createElement('span');
+        typeEl.className = 'ctx-prop-type';
+        typeEl.textContent = `(${type})`;
+
+        row.appendChild(keyEl);
+        row.appendChild(typeEl);
+
+        if (value !== undefined) {
+          const eq = document.createElement('span');
+          eq.className = 'ctx-prop-eq';
+          eq.textContent = '=';
+          row.appendChild(eq);
+          row.appendChild(makeValueSpan(value, type));
+        }
+
+        body.appendChild(row);
+      }
+    });
+
+    header.addEventListener('click', () => {
+      body.classList.toggle('collapsed');
+      header.querySelector('.ctx-toggle').textContent =
+        body.classList.contains('collapsed') ? '▸' : '▾';
+    });
+
+    section.appendChild(header);
+    section.appendChild(body);
+    return section;
+  }
+
+  /**
+   * Render an object-typed property as a tree toggle row so nested data
+   * can be explored inline, mirroring the JSON tree in the Contexts tab.
+   */
+  function buildPropObjectRow(key, value) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ctx-prop-obj-wrapper';
+
+    const keys = Object.keys(value);
+    const toggle = makeToggle();
+    const row = document.createElement('div');
+    row.className = 'ctx-prop-row ctx-prop-row--obj';
+
+    const keyEl = document.createElement('span');
+    keyEl.className = 'ctx-prop-key';
+    keyEl.textContent = key;
+
+    const typeEl = document.createElement('span');
+    typeEl.className = 'ctx-prop-type';
+    typeEl.textContent = '(object)';
+
+    const countEl = makeSpan(` {${keys.length}}`, 'tree-count');
+
+    row.appendChild(toggle);
+    row.appendChild(keyEl);
+    row.appendChild(typeEl);
+    row.appendChild(countEl);
+
+    const children = document.createElement('div');
+    children.className = 'ctx-prop-children tree-children';
+
+    keys.slice(0, 50).forEach((k) => {
+      children.appendChild(buildTreeNode(value[k], k, 0));
+    });
+    if (keys.length > 50) {
+      const more = document.createElement('div');
+      more.style.cssText = 'padding:2px 8px;color:var(--text-muted);font-family:monospace;font-size:11px';
+      more.textContent = `… ${keys.length - 50} more keys`;
+      children.appendChild(more);
+    }
+
+    wireToggle(toggle, children);
+    wrapper.appendChild(row);
+    wrapper.appendChild(children);
+    return wrapper;
+  }
+
+  /** Return a colored <span> for a primitive value. */
+  function makeValueSpan(value, type) {
+    if (value === null) return makeSpan('null', 'tree-null');
+    if (type === 'boolean') return makeSpan(String(value), 'tree-bool');
+    if (type === 'number') return makeSpan(String(value), 'tree-num');
+    if (type === 'string') return makeSpan(`"${escHtml(String(value))}"`, 'tree-str');
+    // fallback
+    return makeSpan(escHtml(String(value)), 'tree-str');
   }
 
   /**
@@ -449,9 +537,9 @@
     } else if (typeof value === 'string') {
       container.appendChild(makeRow(key, makeSpan(`"${escHtml(value)}"`, 'tree-str'), depth, false));
     } else if (Array.isArray(value)) {
-      const toggle   = makeToggle();
-      const count    = makeSpan(` [${value.length}]`, 'tree-count');
-      const row      = makeRow(key, count, depth, true, toggle);
+      const toggle = makeToggle();
+      const count = makeSpan(` [${value.length}]`, 'tree-count');
+      const row = makeRow(key, count, depth, true, toggle);
       const children = document.createElement('div');
       children.className = 'tree-children';
 
@@ -471,10 +559,10 @@
       container.appendChild(row);
       container.appendChild(children);
     } else if (typeof value === 'object') {
-      const keys   = Object.keys(value);
+      const keys = Object.keys(value);
       const toggle = makeToggle();
-      const count  = makeSpan(` {${keys.length}}`, 'tree-count');
-      const row    = makeRow(key, count, depth, true, toggle);
+      const count = makeSpan(` {${keys.length}}`, 'tree-count');
+      const row = makeRow(key, count, depth, true, toggle);
       const children = document.createElement('div');
       children.className = 'tree-children';
 
@@ -567,39 +655,7 @@
       .replace(/"/g, '&quot;');
   }
 
-  function formatHtml(html) {
-    // Basic indentation of HTML for the raw tab
-    let indent = 0;
-    return html
-      .replace(/></g, '>\n<')
-      .split('\n')
-      .map((line) => {
-        line = line.trim();
-        if (!line) return '';
-        if (line.startsWith('</')) indent = Math.max(0, indent - 1);
-        const result = '  '.repeat(indent) + line;
-        if (!line.startsWith('</') && !line.startsWith('</')
-            && !line.endsWith('/>') && line.startsWith('<')
-            && !line.includes('</')) {
-          indent++;
-        }
-        return result;
-      })
-      .filter(Boolean)
-      .join('\n');
-  }
-
   function buildCopyText(output) {
-    const parts = [];
-    if (output.contexts) {
-      parts.push(JSON.stringify(output.contexts, null, 2));
-    }
-    if (output.html) {
-      parts.push('\n--- Raw HTML ---\n' + output.html);
-    }
-    if (output.text) {
-      parts.push(output.text);
-    }
-    return parts.join('\n') || JSON.stringify(output, null, 2);
+    return JSON.stringify(output.contexts, null, 2);
   }
 })();
