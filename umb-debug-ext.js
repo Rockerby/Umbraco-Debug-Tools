@@ -10,6 +10,7 @@
 import { css, html, map, nothing, when } from '@umbraco-cms/backoffice/external/lit';
 import { contextData, UmbContextDebugRequest } from '@umbraco-cms/backoffice/context-api';
 import { UmbLitElement } from '@umbraco-cms/backoffice/lit-element';
+import { firstValueFrom } from '@umbraco-cms/backoffice/external/rxjs';
 
 class UmbDebugElementExt extends UmbLitElement {
   static properties = {
@@ -18,6 +19,8 @@ class UmbDebugElementExt extends UmbLitElement {
     _contexts: { state: true },
     _debugPaneOpen: { state: true },
   };
+
+  callbackTimeoutId = -1;
 
   constructor() {
 
@@ -31,13 +34,33 @@ class UmbDebugElementExt extends UmbLitElement {
     this.#update();
   }
 
-  connectedCallback(){
+  connectedCallback() {
     super.connectedCallback();
     console.log("connected callback");
     this.#update();
 
   }
 
+  static get observedAttributes() {
+    return ['data-umb-command'];
+  }
+
+  attributeChangedCallback(name, oldValue, newValue) {
+    super.attributeChangedCallback?.(name, oldValue, newValue);
+    if (name === 'data-umb-command' && newValue) {
+      const { method, args } = JSON.parse(newValue);
+      if (typeof this[method] === 'function') {
+        this[method](...(args || []));
+      }
+      // Clear it so the same command can be re-triggered later
+      this.removeAttribute('data-umb-command');
+    }
+  }
+
+
+  test(ins) {
+    this.#getContextInfo(ins);
+  }
 
   #update() {
     console.log("update called");
@@ -47,17 +70,54 @@ class UmbDebugElementExt extends UmbLitElement {
         this._contexts = contexts;
         this.#exportContexts(contexts);
 
-        this.#getContextInfo('UmbSectionSidebarContext');
+        //this.#getContextInfo('UmbSectionSidebarContext');
 
       }),
     );
   }
 
   #getContextInfo(contextAlias) {
+    var contextProps = { alias: contextAlias, props: {} };
+
     this.consumeContext(contextAlias, (contextBack) => {
-      console.log(contextBack);
+      console.log("Context kickback", contextBack);
+
+      const props = [
+        ...Object.keys(contextBack),
+        ...Object.keys(Object.getPrototypeOf(contextBack))
+      ];
+
+      props.forEach(key => {
+        const val = contextBack[key];
+
+        if (val && typeof val.subscribe === 'function') {
+          console.log(`[Observable found] ${key}`);
+          this.observe(val, (value) => {
+            contextProps.props[key] = this.#safeValue(value, 0);
+            this.#updateContextAttribute(contextProps);
+          });
+        } else if (typeof val !== 'function') {
+          // Capture plain non-function values immediately
+          contextProps.props[key] = this.#safeValue(val, 0);
+          this.#updateContextAttribute(contextProps);
+        }
+      });
     });
   }
+
+  #updateContextAttribute(contextProps) {
+    try {
+      clearTimeout(this.callbackTimeoutId);
+      this.callbackTimeoutId = setTimeout(()=>{
+        // Send the data from here to the content.js -> panel.js
+        window.postMessage({ type: 'contextData', data: contextProps }, '*');
+      }, 50);
+      // this.setAttribute('data-umb-context-data', JSON.stringify(contextProps));
+    } catch (e) {
+      console.warn('[Context] Failed to serialise context props', e);
+    }
+  }
+
   /**
    * Serialize context data to a JSON attribute so the Chrome extension's
    * content script (isolated world) can read it via the shared DOM.
@@ -67,14 +127,18 @@ class UmbDebugElementExt extends UmbLitElement {
       const data = contextData(contexts);
       const serialized = Array.from(data).map(({ alias, data: instance }) => {
         const entry = { alias, type: instance.type };
+
         if (instance.type === 'object') {
           entry.methods = instance.methods ?? [];
           entry.properties = (instance.properties ?? []).map((p) => {
+
             const prop = { key: p.key, type: p.type };
             if (p.value !== undefined) {
               prop.value = this.#safeValue(p.value, 0);
             }
+
             return prop;
+
           });
         } else if (instance.type === 'primitive') {
           entry.value = this.#safeValue(instance.value, 0);
@@ -83,7 +147,7 @@ class UmbDebugElementExt extends UmbLitElement {
       });
       var s = JSON.stringify(serialized);
       this.setAttribute('data-umb-debug-contexts', JSON.stringify(serialized));
-      console.log("Serialised the ocntexts",s);
+      console.log("Serialised the ocntexts", s);
     } catch (ex) {
       // Ignore serialization errors
       console.log("Unable to add attr", ex)
@@ -91,7 +155,7 @@ class UmbDebugElementExt extends UmbLitElement {
   }
 
   #safeValue(val, depth) {
-    if (depth > 3) return '[nested]';
+    if (depth > 6) return '[nested]';
     if (val === null || val === undefined) return null;
     const type = typeof val;
     if (type === 'function') return '[Function]';
@@ -165,16 +229,16 @@ class UmbDebugElementExt extends UmbLitElement {
             <summary>Properties</summary>
             <ul>
               ${map(instance.properties, (prop) => {
-                switch (prop.type) {
-                  case 'string':
-                  case 'number':
-                  case 'boolean':
-                  case 'object':
-                    return html`<li>${prop.key} <em>(${prop.type})</em> = ${prop.value}</li>`;
-                  default:
-                    return html`<li>${prop.key} <em>(${prop.type})</em></li>`;
-                }
-              })}
+          switch (prop.type) {
+            case 'string':
+            case 'number':
+            case 'boolean':
+            case 'object':
+              return html`<li>${prop.key} <em>(${prop.type})</em> = ${prop.value}</li>`;
+            default:
+              return html`<li>${prop.key} <em>(${prop.type})</em></li>`;
+          }
+        })}
             </ul>
           </details>
         `;

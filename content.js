@@ -18,6 +18,9 @@
   let tooltip = null;
   let extObserver = null;
   let extFallbackTimer = null;
+
+  let previousElement = null;
+
   // Tracks every root (document or ShadowRoot) where the pick-mode cursor
   // style has been injected, so they can all be cleaned up on stop.
   const pickCursorRoots = new Set();
@@ -298,6 +301,9 @@
     extEl.setAttribute('data-umb-devtools-debug', 'true');
     Object.assign(extEl.style, HIDDEN_STYLE);
     targetEl.insertBefore(extEl, targetEl.firstChild);
+
+    previousElement = targetEl.firstChild;
+
     injectedDebugEl = extEl;
 
     console.log('[UmbDevTools] <umb-debug-ext> inserted into DOM. Constructor tag:', extEl.constructor?.name ?? '(unknown — not yet upgraded)');
@@ -379,6 +385,16 @@
 
   // ── Message listener ─────────────────────────────────────────────────────
 
+  // List for messages through the DOM, so we can pass them through to the panel
+  window.addEventListener('message', (event) => {
+    if (event.source !== window) return;
+    if (event.data?.type === 'contextData') {
+      console.log("Received message on window message bus", event);
+
+      sendToPanel({ type: 'contextData', alias: event.data.data.alias, contextData: event.data.data.props });
+    }
+  });
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     switch (msg.type) {
       case 'detect-umbraco': {
@@ -416,6 +432,37 @@
         } else {
           sendResponse({ contexts: null });
         }
+        break;
+
+      case 'get-context-info':
+        console.log('hoveredEl', { msgAlias: msg.alias, previousElement });
+        // Due to the way that the content runs in isolation we don't have the benefit of being able
+        // to call functions on the web component directly, so we do it through attribute watching
+        previousElement.setAttribute('data-umb-command', JSON.stringify({ method: 'test', args: [msg.alias] }));
+
+        // setTimeout(function () {
+        //   // var contextInfo = injectedDebugEl.getAttribute('data-umb-context-data');
+        //   const contextData = JSON.parse(injectedDebugEl.getAttribute('data-umb-context-data'));
+        //   console.log("sending a response", contextData);
+
+        //   sendToPanel({ type: 'get-context-info', alias: msg.alias, contextData });
+
+        //   sendResponse({ ok: true });
+        // }, 1000);
+
+
+        // const observer = new MutationObserver((mutations) => {
+        //   mutations.forEach(mutation => {
+        //     if (mutation.type === 'attributes') {
+        //       console.log(`Attribute "${mutation.attributeName}" changed to:`, el.getAttribute(mutation.attributeName));
+        //     }
+        //   });
+        // });
+
+        // observer.observe(el, {
+        //   attributes: true,
+        //   attributeFilter: ['data-umb-command'] // optional - limit to specific attributes
+        // });
         break;
 
       default:

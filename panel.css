@@ -441,3 +441,22 @@ button svg { flex-shrink: 0; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #555; }
+
+
+
+
+
+
+.json-key     { color: #9cdcfe; }
+.json-string  { color: #ce9178; }
+.json-number  { color: #b5cea8; }
+.json-boolean { color: #569cd6; }
+.json-null,
+.json-undefined { color: #808080; }
+.json-bracket { color: #ffd700; }
+.json-comma,
+.json-colon   { color: #ccc; }
+
+.json-object,
+.json-array   { list-style: none; margin: 2px 0; padding: 0; }
+.json-item    { margin: 1px 0; }

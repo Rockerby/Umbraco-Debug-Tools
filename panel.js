@@ -14,7 +14,7 @@
 
   // ── Connect to background ────────────────────────────────────────────────
   const tabId = chrome.devtools.inspectedWindow.tabId;
-  const port = chrome.runtime.connect({ name: `devtools-${tabId}` });
+  let port = chrome.runtime.connect({ name: `devtools-${tabId}` });
 
   function sendToContent(msg) {
     try {
@@ -66,6 +66,8 @@
   function detectUmbraco() {
     setStatus('checking');
     sendToContent({ type: 'detect-umbraco' });
+
+
   }
 
   function setStatus(state) {
@@ -211,8 +213,118 @@
           showError('No context data yet — the element may still be rendering.');
         }
         break;
+
+      case 'get-context-info':
+        console.log("[get-context-info] We got a message back...", msg);
+        
+        break;
+
+      case 'contextData':
+        console.log("[ContextData] Arrived in panel", msg);
+        if (msg.contextData) {
+          var id = 'ctx-parent_' + msg.alias;
+          var div = document.getElementById(id);
+          div.innerHTML = '';
+          const html = contextJsonToHtml(msg.contextData);
+          div.appendChild(html);
+        }
+        break;
     }
   });
+  function contextJsonToHtml(data, depth = 0) {
+  const indent = (depth + 1) * 16;
+
+  if (data === null) return makeContextSpan('json-null', 'null');
+  if (data === undefined) return makeContextSpan('json-undefined', 'undefined');
+
+  switch (typeof data) {
+    case 'boolean':
+      return makeContextSpan('json-boolean', String(data));
+    case 'number':
+      return makeContextSpan('json-number', String(data));
+    case 'string':
+      return makeContextSpan('json-string', `"${escapeHtml(data)}"`);
+    case 'object':
+      if (Array.isArray(data)) {
+        if (data.length === 0) return makeContextSpan('json-bracket', '[]');
+        return makeContextCollapsible('[ ]', data.length, data.map((item, i) => {
+          const row = document.createElement('div');
+          row.className = 'ctx-prop-row';
+          row.appendChild(contextJsonToHtml(item, depth + 1));
+          if (i < data.length - 1) row.appendChild(makeContextSpan('json-comma', ','));
+          return row;
+        }), indent);
+      } else {
+        const keys = Object.keys(data);
+        if (keys.length === 0) return makeContextSpan('json-bracket', '{}');
+        return makeContextCollapsible('{ }', keys.length, keys.map((key, i) => {
+          const row = document.createElement('div');
+          row.className = 'ctx-prop-row';
+
+          const keyEl = makeContextSpan('ctx-prop-key', key);
+          const eq = makeContextSpan('ctx-prop-eq', '=');
+          const val = contextJsonToHtml(data[key], depth + 1);
+
+          row.appendChild(keyEl);
+          row.appendChild(eq);
+          row.appendChild(val);
+          if (i < keys.length - 1) row.appendChild(makeContextSpan('json-comma', ','));
+          return row;
+        }), indent);
+      }
+    default:
+      return makeContextSpan('json-unknown', escapeHtml(String(data)));
+  }
+}
+
+function makeContextCollapsible(title, count, rows, indent) {
+  const wrap = document.createElement('div');
+  wrap.className = 'ctx-subsection';
+
+  const header = document.createElement('div');
+  header.className = 'ctx-subsection-header';
+
+  const toggle = makeContextSpan('ctx-toggle', '▸');
+  const titleEl = makeContextSpan('ctx-subsection-title', title);
+  const countEl = makeContextSpan('ctx-count', `(${count})`);
+
+  header.appendChild(toggle);
+  header.appendChild(titleEl);
+  header.appendChild(countEl);
+
+  const body = document.createElement('div');
+  body.className = 'ctx-subsection-body collapsed';
+  //body.style.paddingLeft = `${indent}px`;
+
+  rows.forEach(row => body.appendChild(row));
+
+  header.addEventListener('click', () => {
+    body.classList.toggle('collapsed');
+    toggle.textContent = body.classList.contains('collapsed') ? '▸' : '▾';
+  });
+
+  wrap.appendChild(header);
+  wrap.appendChild(body);
+  return wrap;
+}
+
+function makeContextSpan(className, text) {
+  const span = document.createElement('span');
+  span.className = className;
+  span.textContent = text;
+  return span;
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+
+
 
   // Handle responses that come back synchronously (sendMessage responses
   // are delivered as separate messages in our port-based architecture, but
@@ -329,13 +441,16 @@
 
       const header = document.createElement('div');
       header.className = 'ctx-section-header';
+
+      header.dataset.alias = alias;
+
       header.innerHTML =
-        `<span class="ctx-toggle">▾</span>` +
+        `<span class="ctx-toggle">▸</span>` +
         `<span class="ctx-name">${escHtml(alias)}</span>` +
         `<span class="ctx-type-badge">${escHtml(type)}</span>`;
 
       const body = document.createElement('div');
-      body.className = 'ctx-section-body';
+      body.className = 'ctx-section-body collapsed';
 
       if (type === 'function') {
         const label = document.createElement('div');
@@ -354,6 +469,10 @@
         if (properties && properties.length) {
           body.appendChild(buildPropertiesSection(properties));
         }
+
+        body.appendChild(buildInstanceSection(alias));
+        
+
         if (!methods?.length && !properties?.length) {
           const empty = document.createElement('div');
           empty.className = 'ctx-callable';
@@ -364,6 +483,10 @@
 
       header.addEventListener('click', () => {
         body.classList.toggle('collapsed');
+
+        // console.log("Sending to content", alias);
+        // sendToContent({ type: 'get-context-info', alias  });
+
         header.querySelector('.ctx-toggle').textContent =
           body.classList.contains('collapsed') ? '▸' : '▾';
       });
@@ -415,12 +538,12 @@
     const header = document.createElement('div');
     header.className = 'ctx-subsection-header';
     header.innerHTML =
-      `<span class="ctx-toggle">▾</span>` +
+      `<span class="ctx-toggle">▸</span>` +
       `<span class="ctx-subsection-title">Properties</span>` +
       `<span class="ctx-count">(${properties.length})</span>`;
 
     const body = document.createElement('div');
-    body.className = 'ctx-subsection-body';
+    body.className = 'ctx-subsection-body collapsed';
 
     properties.forEach(({ key, type, value }) => {
       if (type === 'object' && value !== null && typeof value === 'object') {
@@ -461,6 +584,72 @@
 
     section.appendChild(header);
     section.appendChild(body);
+    return section;
+  }
+
+  function buildInstanceSection(alias) {
+    const section = document.createElement('div');
+    section.className = 'ctx-subsection';
+
+    const header = document.createElement('div');
+    header.className = 'ctx-subsection-header';
+    header.innerHTML =
+      `<span class="ctx-toggle">▸</span>` +
+      `<span class="ctx-subsection-title">Properties</span>`;// +
+      //`<span class="ctx-count">(expand)</span>`;
+
+    const body = document.createElement('div');
+    body.className = 'ctx-subsection-body collapsed';
+    body.id = 'ctx-parent_' + alias;
+    body.dataset.contextAlias = alias;
+
+    // properties.forEach(({ key, type, value }) => {
+    //   if (type === 'object' && value !== null && typeof value === 'object') {
+    //     // Object-valued property — render as a collapsible tree row
+    //     body.appendChild(buildPropObjectRow(key, value));
+    //   } else {
+    //     const row = document.createElement('div');
+    //     row.className = 'ctx-prop-row';
+
+    //     const keyEl = document.createElement('span');
+    //     keyEl.className = 'ctx-prop-key';
+    //     keyEl.textContent = key;
+
+    //     const typeEl = document.createElement('span');
+    //     typeEl.className = 'ctx-prop-type';
+    //     typeEl.textContent = `(${type})`;
+
+    //     row.appendChild(keyEl);
+    //     row.appendChild(typeEl);
+
+    //     if (value !== undefined) {
+    //       const eq = document.createElement('span');
+    //       eq.className = 'ctx-prop-eq';
+    //       eq.textContent = '=';
+    //       row.appendChild(eq);
+    //       row.appendChild(makeValueSpan(value, type));
+    //     }
+
+    //     body.appendChild(row);
+    //   }
+    // });
+
+    
+
+    header.addEventListener('click', () => {
+
+
+      console.log("Sending to content", alias);
+      sendToContent({ type: 'get-context-info', alias  });
+
+      body.classList.toggle('collapsed');
+      header.querySelector('.ctx-toggle').textContent =
+        body.classList.contains('collapsed') ? '▸' : '▾';
+    });
+
+    section.appendChild(header);
+    section.appendChild(body);
+
     return section;
   }
 
