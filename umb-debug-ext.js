@@ -80,8 +80,11 @@ class UmbDebugElementExt extends UmbLitElement {
     var contextProps = { alias: contextAlias, props: {} };
 
     this.consumeContext(contextAlias, (contextBack) => {
-      console.log("Context kickback", contextBack);
-
+      console.log("Context kickback", {contextAlias, contextBack});
+      if(!contextBack){
+        return;
+      }
+      
       const props = [
         ...Object.keys(contextBack),
         ...Object.keys(Object.getPrototypeOf(contextBack))
@@ -93,6 +96,7 @@ class UmbDebugElementExt extends UmbLitElement {
         if (val && typeof val.subscribe === 'function') {
           console.log(`[Observable found] ${key}`);
           this.observe(val, (value) => {
+            console.log("I'm observing!", {key, value});
             contextProps.props[key] = this.#safeValue(value, 0);
             this.#updateContextAttribute(contextProps);
           });
@@ -106,7 +110,9 @@ class UmbDebugElementExt extends UmbLitElement {
   }
 
   #updateContextAttribute(contextProps) {
+    console.log("Check the data out and push", contextProps);
     try {
+
       clearTimeout(this.callbackTimeoutId);
       this.callbackTimeoutId = setTimeout(()=>{
         // Send the data from here to the content.js -> panel.js
