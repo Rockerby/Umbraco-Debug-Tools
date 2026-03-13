@@ -14,13 +14,99 @@
 
   // ── Connect to background ────────────────────────────────────────────────
   const tabId = chrome.devtools.inspectedWindow.tabId;
-  let port = chrome.runtime.connect({ name: `devtools-${tabId}` });
+  let port = connectPort();
+
+  function connectPort() {
+    const p = chrome.runtime.connect({ name: `devtools-${tabId}` });
+    p.onMessage.addListener(handleMessage);
+    p.onDisconnect.addListener(() => {
+      port = connectPort();
+    });
+    return p;
+  }
+
+  // ── Message handler ──────────────────────────────────────────────────────
+  function handleMessage(msg) {
+    console.log('[UmbDevTools panel] Received message:', msg.type, msg);
+    switch (msg.type) {
+
+      // Response to detect-umbraco
+      case 'detect-umbraco-response':
+        console.log("received detected callback...", msg);
+        setStatus(msg.detected ? 'detected' : 'not-detected');
+        if (msg.detected) {
+          clearInterval(detectionTask);
+          detectionTask = -1;
+        }
+        break;
+
+      // Cancellation via Esc in the page
+      case 'pick-cancelled':
+        resetPickButton();
+        hideInfo();
+        break;
+
+      // An element was clicked in pick mode
+      case 'element-selected':
+        resetPickButton();
+        hideInfo();
+        showBreadcrumb(msg.element);
+        //btnRefresh.disabled = false;
+        btnClear.disabled = false;
+        setLoading(true);
+        showEmpty(false);
+        break;
+
+      // Structured context data from <umb-debug-ext>
+      case 'ext-context-data':
+        setLoading(false);
+        hideError();
+        lastOutput = { _ext: true, contexts: msg.contexts };
+        renderUmbExtContexts(msg.contexts);
+        break;
+
+      // umb-debug-ext failed to produce data within the timeout
+      case 'ext-context-error':
+        setLoading(false);
+        showError(msg.error);
+        break;
+
+      // Response to refresh-output
+      case 'refresh-response':
+        setLoading(false);
+        if (msg.contexts) {
+          hideError();
+          lastOutput = { _ext: true, contexts: msg.contexts };
+          renderUmbExtContexts(msg.contexts);
+        } else {
+          showError('No context data yet — the element may still be rendering.');
+        }
+        break;
+
+      case 'get-context-info':
+        console.log("[get-context-info] We got a message back...", msg);
+        
+        break;
+
+      case 'contextData':
+        console.log("[ContextData] Arrived in panel", msg);
+        if (msg.contextData) {
+          var id = 'ctx-parent_' + msg.alias;
+          var div = document.getElementById(id);
+          div.innerHTML = '';
+          const html = contextJsonToHtml(msg.contextData);
+          div.appendChild(html);
+        }
+        break;
+    }
+  }
 
   function sendToContent(msg) {
     try {
       port.postMessage(msg);
     } catch (err) {
-      port = chrome.runtime.connect({ name: `devtools-${tabId}` });
+      console.log("PORT FAILED, reconnecting:", err);
+      port = connectPort();
       port.postMessage(msg);
     }
   }
@@ -31,7 +117,6 @@
   const statusBadge = $('status-badge');
   const statusText = $('status-text');
   const btnPick = $('btn-pick');
-  const btnRefresh = $('btn-refresh');
   const btnClear = $('btn-clear');
   const btnCopy = $('btn-copy');
   const breadcrumb = $('breadcrumb');
@@ -48,6 +133,8 @@
   const rawHtml = $('raw-html');
   const tabBtns = document.querySelectorAll('.tab-btn[data-tab]');
 
+  let detectionTask = -1;
+
   // ── State ────────────────────────────────────────────────────────────────
   let isUmbraco = false;
   let isPicking = false;
@@ -58,16 +145,32 @@
 
   // Re-detect when the user navigates to a new page
   chrome.devtools.network.onNavigated.addListener(() => {
+    console.log("navigated HEY");
     reset();
     detectUmbraco();
   });
 
   // ── Detection ────────────────────────────────────────────────────────────
   function detectUmbraco() {
+    if (detectionTask > 0) {
+      clearInterval(detectionTask);
+    }
     setStatus('checking');
+    isUmbraco = false;
+
+    // Retry until the content script responds (it may not be ready yet after a navigation)
+    let attempts = 0;
+    detectionTask = setInterval(() => {
+      if (isUmbraco || attempts++ > 20) {
+        clearInterval(detectionTask);
+        detectionTask = -1;
+        return;
+      }
+      sendToContent({ type: 'detect-umbraco' });
+    }, 500);
+
+    // Send immediately too
     sendToContent({ type: 'detect-umbraco' });
-
-
   }
 
   function setStatus(state) {
@@ -129,11 +232,6 @@
   }
 
   // ── Toolbar actions ──────────────────────────────────────────────────────
-  btnRefresh.addEventListener('click', () => {
-    setLoading(true);
-    sendToContent({ type: 'refresh-output' });
-  });
-
   btnClear.addEventListener('click', () => {
     sendToContent({ type: 'clear-debug' });
     reset();
@@ -161,76 +259,6 @@
     });
   });
 
-  // ── Message handler ──────────────────────────────────────────────────────
-  port.onMessage.addListener((msg) => {
-    console.log('[UmbDevTools panel] Received message:', msg.type, msg);
-    switch (msg.type) {
-
-      // Response to detect-umbraco
-      case 'detect-umbraco-response':
-        setStatus(msg.detected ? 'detected' : 'not-detected');
-        break;
-
-      // Cancellation via Esc in the page
-      case 'pick-cancelled':
-        resetPickButton();
-        hideInfo();
-        break;
-
-      // An element was clicked in pick mode
-      case 'element-selected':
-        resetPickButton();
-        hideInfo();
-        showBreadcrumb(msg.element);
-        btnRefresh.disabled = false;
-        btnClear.disabled = false;
-        setLoading(true);
-        showEmpty(false);
-        break;
-
-      // Structured context data from <umb-debug-ext>
-      case 'ext-context-data':
-        setLoading(false);
-        hideError();
-        lastOutput = { _ext: true, contexts: msg.contexts };
-        renderUmbExtContexts(msg.contexts);
-        break;
-
-      // umb-debug-ext failed to produce data within the timeout
-      case 'ext-context-error':
-        setLoading(false);
-        showError(msg.error);
-        break;
-
-      // Response to refresh-output
-      case 'refresh-response':
-        setLoading(false);
-        if (msg.contexts) {
-          hideError();
-          lastOutput = { _ext: true, contexts: msg.contexts };
-          renderUmbExtContexts(msg.contexts);
-        } else {
-          showError('No context data yet — the element may still be rendering.');
-        }
-        break;
-
-      case 'get-context-info':
-        console.log("[get-context-info] We got a message back...", msg);
-        
-        break;
-
-      case 'contextData':
-        console.log("[ContextData] Arrived in panel", msg);
-        if (msg.contextData) {
-          var id = 'ctx-parent_' + msg.alias;
-          var div = document.getElementById(id);
-          div.innerHTML = '';
-          const html = contextJsonToHtml(msg.contextData);
-          div.appendChild(html);
-        }
-        break;
-    }
-  });
   function contextJsonToHtml(data, depth = 0) {
   const indent = (depth + 1) * 16;
 
@@ -398,10 +426,11 @@ function escapeHtml(str) {
 
   function reset() {
     lastOutput = null;
+    isUmbraco = false;
     breadcrumb.classList.add('hidden');
     emptyState.classList.remove('hidden');
     outputPanel.classList.add('hidden');
-    btnRefresh.disabled = true;
+    //btnRefresh.disabled = true;
     btnClear.disabled = true;
     setLoading(false);
     hideError();
@@ -463,11 +492,9 @@ function escapeHtml(str) {
         row.appendChild(makeValueSpan(value, typeof value));
         body.appendChild(row);
       } else if (type === 'object') {
+
         if (methods && methods.length) {
           body.appendChild(buildMethodsSection(methods));
-        }
-        if (properties && properties.length) {
-          body.appendChild(buildPropertiesSection(properties));
         }
 
         body.appendChild(buildInstanceSection(alias));
@@ -518,62 +545,6 @@ function escapeHtml(str) {
         `<span class="ctx-method-name">${escHtml(name)}</span>` +
         `<span class="ctx-method-parens">()</span>`;
       body.appendChild(row);
-    });
-
-    header.addEventListener('click', () => {
-      body.classList.toggle('collapsed');
-      header.querySelector('.ctx-toggle').textContent =
-        body.classList.contains('collapsed') ? '▸' : '▾';
-    });
-
-    section.appendChild(header);
-    section.appendChild(body);
-    return section;
-  }
-
-  function buildPropertiesSection(properties) {
-    const section = document.createElement('div');
-    section.className = 'ctx-subsection';
-
-    const header = document.createElement('div');
-    header.className = 'ctx-subsection-header';
-    header.innerHTML =
-      `<span class="ctx-toggle">▸</span>` +
-      `<span class="ctx-subsection-title">Properties</span>` +
-      `<span class="ctx-count">(${properties.length})</span>`;
-
-    const body = document.createElement('div');
-    body.className = 'ctx-subsection-body collapsed';
-
-    properties.forEach(({ key, type, value }) => {
-      if (type === 'object' && value !== null && typeof value === 'object') {
-        // Object-valued property — render as a collapsible tree row
-        body.appendChild(buildPropObjectRow(key, value));
-      } else {
-        const row = document.createElement('div');
-        row.className = 'ctx-prop-row';
-
-        const keyEl = document.createElement('span');
-        keyEl.className = 'ctx-prop-key';
-        keyEl.textContent = key;
-
-        const typeEl = document.createElement('span');
-        typeEl.className = 'ctx-prop-type';
-        typeEl.textContent = `(${type})`;
-
-        row.appendChild(keyEl);
-        row.appendChild(typeEl);
-
-        if (value !== undefined) {
-          const eq = document.createElement('span');
-          eq.className = 'ctx-prop-eq';
-          eq.textContent = '=';
-          row.appendChild(eq);
-          row.appendChild(makeValueSpan(value, type));
-        }
-
-        body.appendChild(row);
-      }
     });
 
     header.addEventListener('click', () => {
@@ -645,6 +616,7 @@ function escapeHtml(str) {
       body.classList.toggle('collapsed');
       header.querySelector('.ctx-toggle').textContent =
         body.classList.contains('collapsed') ? '▸' : '▾';
+
     });
 
     section.appendChild(header);

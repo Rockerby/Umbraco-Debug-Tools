@@ -54,6 +54,7 @@
 
   function detectUmbraco() {
     // Umbraco 14+ (Bellissima) — Lit-based web components
+    console.log("Document in content.js", document);
     if (document.querySelector('umb-app, umb-backoffice')) return true;
 
     // Any custom element with umb- prefix rendered in the page
@@ -387,9 +388,9 @@
 
   // List for messages through the DOM, so we can pass them through to the panel
   window.addEventListener('message', (event) => {
+    console.log("Received message on window message bus", event);
     if (event.source !== window) return;
     if (event.data?.type === 'contextData') {
-      console.log("Received message on window message bus", event);
 
       sendToPanel({ type: 'contextData', alias: event.data.data.alias, contextData: event.data.data.props });
     }
@@ -401,7 +402,7 @@
         const detected = detectUmbraco();
         console.log('[UmbDevTools] detect-umbraco result:', detected);
         if (detected) injectUmbDebugExt();
-        sendResponse({ detected });
+        sendResponse({ type: 'detect-umbraco-response', detected });
         break;
       }
 
