@@ -102,6 +102,7 @@
   }
 
   function sendToContent(msg) {
+    console.log('[UmbDevTools panel] sendToContent →', msg.type, port);
     try {
       port.postMessage(msg);
     } catch (err) {
@@ -177,6 +178,7 @@
     statusBadge.className = '';
     if (state === 'checking') {
       statusText.textContent = 'Checking…';
+      emptyMessage.innerHTML = 'Currently looking for your Umbraco instance...';
     } else if (state === 'detected') {
       statusBadge.classList.add('detected');
       statusText.textContent = 'Umbraco Detected';
@@ -285,7 +287,8 @@
       } else {
         const keys = Object.keys(data);
         if (keys.length === 0) return makeContextSpan('json-bracket', '{}');
-        return makeContextCollapsible('{ }', keys.length, keys.map((key, i) => {
+        let propName = depth == 0 ? "Properties" : "{ }";
+        return makeContextCollapsible(propName, keys.length, keys.map((key, i) => {
           const row = document.createElement('div');
           row.className = 'ctx-prop-row';
 
@@ -510,9 +513,18 @@ function escapeHtml(str) {
 
       header.addEventListener('click', () => {
         body.classList.toggle('collapsed');
+        const isOpen = !body.classList.contains('collapsed');
 
-        // console.log("Sending to content", alias);
-        // sendToContent({ type: 'get-context-info', alias  });
+        if (isOpen) {
+          // Auto-fetch and expand properties when the section is opened
+          sendToContent({ type: 'get-context-info', alias });
+          const propsBody = body.querySelector(`[data-context-alias="${alias}"]`);
+          if (propsBody) {
+            propsBody.classList.remove('collapsed');
+            const propsToggle = propsBody.previousElementSibling?.querySelector('.ctx-toggle');
+            if (propsToggle) propsToggle.textContent = '▾';
+          }
+        }
 
         header.querySelector('.ctx-toggle').textContent =
           body.classList.contains('collapsed') ? '▸' : '▾';
@@ -564,9 +576,6 @@ function escapeHtml(str) {
 
     const header = document.createElement('div');
     header.className = 'ctx-subsection-header';
-    header.innerHTML =
-      `<span class="ctx-toggle">▸</span>` +
-      `<span class="ctx-subsection-title">Properties</span>`;// +
       //`<span class="ctx-count">(expand)</span>`;
 
     const body = document.createElement('div');
@@ -574,102 +583,16 @@ function escapeHtml(str) {
     body.id = 'ctx-parent_' + alias;
     body.dataset.contextAlias = alias;
 
-    // properties.forEach(({ key, type, value }) => {
-    //   if (type === 'object' && value !== null && typeof value === 'object') {
-    //     // Object-valued property — render as a collapsible tree row
-    //     body.appendChild(buildPropObjectRow(key, value));
-    //   } else {
-    //     const row = document.createElement('div');
-    //     row.className = 'ctx-prop-row';
-
-    //     const keyEl = document.createElement('span');
-    //     keyEl.className = 'ctx-prop-key';
-    //     keyEl.textContent = key;
-
-    //     const typeEl = document.createElement('span');
-    //     typeEl.className = 'ctx-prop-type';
-    //     typeEl.textContent = `(${type})`;
-
-    //     row.appendChild(keyEl);
-    //     row.appendChild(typeEl);
-
-    //     if (value !== undefined) {
-    //       const eq = document.createElement('span');
-    //       eq.className = 'ctx-prop-eq';
-    //       eq.textContent = '=';
-    //       row.appendChild(eq);
-    //       row.appendChild(makeValueSpan(value, type));
-    //     }
-
-    //     body.appendChild(row);
-    //   }
-    // });
-
-    
-
     header.addEventListener('click', () => {
-
-
-      console.log("Sending to content", alias);
-      sendToContent({ type: 'get-context-info', alias  });
-
       body.classList.toggle('collapsed');
       header.querySelector('.ctx-toggle').textContent =
         body.classList.contains('collapsed') ? '▸' : '▾';
-
     });
 
-    section.appendChild(header);
+    //section.appendChild(header);
     section.appendChild(body);
 
     return section;
-  }
-
-  /**
-   * Render an object-typed property as a tree toggle row so nested data
-   * can be explored inline, mirroring the JSON tree in the Contexts tab.
-   */
-  function buildPropObjectRow(key, value) {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'ctx-prop-obj-wrapper';
-
-    const keys = Object.keys(value);
-    const toggle = makeToggle();
-    const row = document.createElement('div');
-    row.className = 'ctx-prop-row ctx-prop-row--obj';
-
-    const keyEl = document.createElement('span');
-    keyEl.className = 'ctx-prop-key';
-    keyEl.textContent = key;
-
-    const typeEl = document.createElement('span');
-    typeEl.className = 'ctx-prop-type';
-    typeEl.textContent = '(object)';
-
-    const countEl = makeSpan(` {${keys.length}}`, 'tree-count');
-
-    row.appendChild(toggle);
-    row.appendChild(keyEl);
-    row.appendChild(typeEl);
-    row.appendChild(countEl);
-
-    const children = document.createElement('div');
-    children.className = 'ctx-prop-children tree-children';
-
-    keys.slice(0, 50).forEach((k) => {
-      children.appendChild(buildTreeNode(value[k], k, 0));
-    });
-    if (keys.length > 50) {
-      const more = document.createElement('div');
-      more.style.cssText = 'padding:2px 8px;color:var(--text-muted);font-family:monospace;font-size:11px';
-      more.textContent = `… ${keys.length - 50} more keys`;
-      children.appendChild(more);
-    }
-
-    wireToggle(toggle, children);
-    wrapper.appendChild(row);
-    wrapper.appendChild(children);
-    return wrapper;
   }
 
   /** Return a colored <span> for a primitive value. */
@@ -682,129 +605,11 @@ function escapeHtml(str) {
     return makeSpan(escHtml(String(value)), 'tree-str');
   }
 
-  /**
-   * Build a collapsible JSON tree node.
-   */
-  function buildTreeNode(value, key, depth) {
-    const container = document.createElement('div');
-    container.className = 'tree-node';
-
-    if (value === null) {
-      container.appendChild(makeRow(key, makeSpan('null', 'tree-null'), depth, false));
-    } else if (typeof value === 'boolean') {
-      container.appendChild(makeRow(key, makeSpan(String(value), 'tree-bool'), depth, false));
-    } else if (typeof value === 'number') {
-      container.appendChild(makeRow(key, makeSpan(String(value), 'tree-num'), depth, false));
-    } else if (typeof value === 'string') {
-      container.appendChild(makeRow(key, makeSpan(`"${escHtml(value)}"`, 'tree-str'), depth, false));
-    } else if (Array.isArray(value)) {
-      const toggle = makeToggle();
-      const count = makeSpan(` [${value.length}]`, 'tree-count');
-      const row = makeRow(key, count, depth, true, toggle);
-      const children = document.createElement('div');
-      children.className = 'tree-children';
-
-      value.slice(0, 200).forEach((v, i) => {
-        children.appendChild(buildTreeNode(v, String(i), depth + 1));
-      });
-      if (value.length > 200) {
-        const more = document.createElement('div');
-        more.className = 'tree-row';
-        more.style.color = 'var(--text-muted)';
-        more.style.paddingLeft = `${8 + (depth + 1) * 16}px`;
-        more.textContent = `… ${value.length - 200} more items`;
-        children.appendChild(more);
-      }
-
-      wireToggle(toggle, children);
-      container.appendChild(row);
-      container.appendChild(children);
-    } else if (typeof value === 'object') {
-      const keys = Object.keys(value);
-      const toggle = makeToggle();
-      const count = makeSpan(` {${keys.length}}`, 'tree-count');
-      const row = makeRow(key, count, depth, true, toggle);
-      const children = document.createElement('div');
-      children.className = 'tree-children';
-
-      keys.slice(0, 200).forEach((k) => {
-        children.appendChild(buildTreeNode(value[k], k, depth + 1));
-      });
-      if (keys.length > 200) {
-        const more = document.createElement('div');
-        more.className = 'tree-row';
-        more.style.color = 'var(--text-muted)';
-        more.style.paddingLeft = `${8 + (depth + 1) * 16}px`;
-        more.textContent = `… ${keys.length - 200} more keys`;
-        children.appendChild(more);
-      }
-
-      wireToggle(toggle, children);
-      container.appendChild(row);
-      container.appendChild(children);
-    } else {
-      container.appendChild(
-        makeRow(key, makeSpan(escHtml(String(value)), 'tree-str'), depth, false)
-      );
-    }
-
-    return container;
-  }
-
-  function makeRow(key, valueEl, depth, collapsible, toggle) {
-    const row = document.createElement('div');
-    row.className = 'tree-row';
-    row.style.paddingLeft = `${8 + depth * 16}px`;
-
-    if (toggle) row.appendChild(toggle);
-    else {
-      const spacer = document.createElement('span');
-      spacer.className = 'toggle';
-      row.appendChild(spacer);
-    }
-
-    if (key !== null) {
-      const keyEl = document.createElement('span');
-      keyEl.className = 'tree-key';
-      keyEl.textContent = key;
-      row.appendChild(keyEl);
-
-      const colon = document.createElement('span');
-      colon.className = 'tree-colon';
-      colon.textContent = ':';
-      row.appendChild(colon);
-    }
-
-    row.appendChild(valueEl);
-    return row;
-  }
-
   function makeSpan(html, cls) {
     const s = document.createElement('span');
     s.className = cls;
     s.innerHTML = html;
     return s;
-  }
-
-  function makeToggle() {
-    const t = document.createElement('span');
-    t.className = 'toggle';
-    t.textContent = '▾';
-    return t;
-  }
-
-  function wireToggle(toggle, children) {
-    toggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      children.classList.toggle('collapsed');
-      toggle.textContent = children.classList.contains('collapsed') ? '▸' : '▾';
-    });
-    // Also allow clicking the row to collapse
-    toggle.closest && toggle.closest('.tree-row') &&
-      toggle.closest('.tree-row').addEventListener('click', () => {
-        children.classList.toggle('collapsed');
-        toggle.textContent = children.classList.contains('collapsed') ? '▸' : '▾';
-      });
   }
 
   // ── Utilities ────────────────────────────────────────────────────────────

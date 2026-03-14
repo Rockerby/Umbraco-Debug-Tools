@@ -19,7 +19,9 @@ chrome.runtime.onConnect.addListener((port) => {
 
   // Forward panel messages to the content script in the inspected tab
   port.onMessage.addListener((msg) => {
+    console.log("[background.js] Forwarding to tab", tabId, msg.type);
     chrome.tabs.sendMessage(tabId, msg).then((response) => {
+      console.log("[background.js] Response from tab for", msg.type, response);
       if (response) port.postMessage(response);
     }).catch((err) => {
       // "Receiving end does not exist" is expected when the content script

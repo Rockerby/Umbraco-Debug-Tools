@@ -407,7 +407,9 @@
       }
 
       case 'start-pick':
+        console.log('[UmbDevTools content] start-pick received, isPicking:', isPicking);
         startPickMode();
+        console.log('[UmbDevTools content] startPickMode called, isPicking now:', isPicking);
         sendResponse({ ok: true });
         break;
 

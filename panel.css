@@ -182,7 +182,7 @@ button svg { flex-shrink: 0; }
 }
 
 #empty-state svg { opacity: 0.3; }
-#empty-state p   { font-size: 12px; line-height: 1.5; max-width: 260px; }
+#empty-state p   { font-size: 12px; line-height: 1.5; max-width: 320px; }
 #empty-state.hidden { display: none; }
 
 /* ─── Output panel ──────────────────────────────────────────────────────── */
@@ -323,9 +323,6 @@ button svg { flex-shrink: 0; }
 }
 
 /* ─── Context subsections (Methods / Properties) ─────────────────────────── */
-.ctx-subsection {
-  border-top: 1px solid var(--border);
-}
 
 .ctx-subsection-header {
   display: flex;
