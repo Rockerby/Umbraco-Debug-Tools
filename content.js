@@ -48,6 +48,19 @@
     script.addEventListener('load', () => console.log('[UmbDevTools] umb-debug-ext.js loaded OK'));
     script.addEventListener('error', (e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
     (document.head || document.documentElement).appendChild(script);
+
+    
+
+    // Setup event listener
+    console.log("setting event listener..");
+
+    // Send the data via an event listener 
+    window.addEventListener('element-data-ready', () => {
+
+      console.log("element-data-ready fired..");
+      sendExtContextData(window.localStorage.getItem('umbDebugContext'));
+    
+    });
   }
 
   // ── Umbraco Detection ────────────────────────────────────────────────────
@@ -58,17 +71,10 @@
     if (document.querySelector('umb-app, umb-backoffice')) return true;
 
     // Any custom element with umb- prefix rendered in the page
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    /*const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
     let node;
     while ((node = walker.nextNode())) {
       if (node.tagName && node.tagName.toLowerCase().startsWith('umb-')) return true;
-    }
-
-    // Umbraco 9–13 (AngularJS-based) — check ng-app attribute
-    const ngRoot = document.querySelector('[ng-app]');
-    if (ngRoot) {
-      const app = ngRoot.getAttribute('ng-app') || '';
-      if (app.toLowerCase().includes('umbraco')) return true;
     }
 
     // Global variables set by Umbraco
@@ -78,7 +84,7 @@
       typeof window._umb !== 'undefined'
     ) {
       return true;
-    }
+    }*/
 
     return false;
   }
@@ -318,7 +324,7 @@
       sendExtContextData(extEl);
       return;
     }
-
+/*
     // Watch for the attribute via MutationObserver (works across the
     // content-script/page-world boundary since the DOM is shared).
     extObserver = new MutationObserver((mutations) => {
@@ -341,14 +347,17 @@
       if (!hasAttr) {
         sendToPanel({ type: 'ext-context-error', error: `umb-debug-ext produced no data (element constructor: ${ctorName}). Check the page console for errors.` });
       }
-    }, 5000);
+    }, 5000);*/
+
+
+
   }
 
   function sendExtContextData(extEl) {
-    const raw = extEl.getAttribute('data-umb-debug-contexts');
+    const raw = extEl;
     console.log('[UmbDevTools] sendExtContextData — raw attribute length:', raw?.length, 'preview:', raw?.slice(0, 100));
     try {
-      const contexts = JSON.parse(raw);
+      const contexts = JSON.parse(extEl);
       console.log('[UmbDevTools] Parsed', contexts.length, 'contexts:', contexts.map(c => c.alias));
       sendToPanel({ type: 'ext-context-data', contexts });
     } catch (e) {
@@ -356,6 +365,19 @@
       sendToPanel({ type: 'ext-context-error', error: 'Failed to parse context data from umb-debug-ext.' });
     }
   }
+
+  // function sendExtContextData(extEl) {
+  //   const raw = extEl.getAttribute('data-umb-debug-contexts');
+  //   console.log('[UmbDevTools] sendExtContextData — raw attribute length:', raw?.length, 'preview:', raw?.slice(0, 100));
+  //   try {
+  //     const contexts = JSON.parse(raw);
+  //     console.log('[UmbDevTools] Parsed', contexts.length, 'contexts:', contexts.map(c => c.alias));
+  //     sendToPanel({ type: 'ext-context-data', contexts });
+  //   } catch (e) {
+  //     console.error('[UmbDevTools] Failed to parse context data:', e);
+  //     sendToPanel({ type: 'ext-context-error', error: 'Failed to parse context data from umb-debug-ext.' });
+  //   }
+  // }
 
   function elementInfo(el) {
     const tag = el.tagName.toLowerCase();

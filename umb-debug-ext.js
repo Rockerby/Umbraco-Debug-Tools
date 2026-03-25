@@ -128,7 +128,7 @@ class UmbDebugElementExt extends UmbLitElement {
    * Serialize context data to a JSON attribute so the Chrome extension's
    * content script (isolated world) can read it via the shared DOM.
    */
-  #exportContexts(contexts) {
+  async #exportContexts(contexts) {
     try {
       const data = contextData(contexts);
       const serialized = Array.from(data).map(({ alias, data: instance }) => {
@@ -152,8 +152,19 @@ class UmbDebugElementExt extends UmbLitElement {
         return entry;
       });
       var s = JSON.stringify(serialized);
-      this.setAttribute('data-umb-debug-contexts', JSON.stringify(serialized));
-      console.log("Serialised the ocntexts", s);
+
+      window.localStorage.setItem('umbDebugContext', s);
+
+      console.log("Serialised the contexts", s);
+      console.log("firing data ready event");
+
+      window.dispatchEvent(new CustomEvent('element-data-ready', {
+         detail: { },  // your payload
+         bubbles: true,           // bubbles up the DOM
+         composed: true,          // crosses shadow DOM boundary ← crucial for web components
+      }));
+
+      //this.setAttribute('data-umb-debug-contexts', JSON.stringify(serialized));
     } catch (ex) {
       // Ignore serialization errors
       console.log("Unable to add attr", ex)
