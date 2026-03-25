@@ -11,7 +11,6 @@ A Chrome DevTools extension for inspecting **Umbraco Backoffice** element contex
 
 Works with:
 - **Umbraco 14 / Bellissima** (Lit web-component back office)
-- **Umbraco 9–13** (AngularJS-based back office)
 
 ## Installation
 
