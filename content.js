@@ -30,15 +30,18 @@
   let umbDebugExtInjected = false;
 
   /**
-   * Inject umb-debug-ext.js as an inline <script type="module"> into the page.
-   * The script uses the page's import map to resolve @umbraco-cms/* modules,
-   * so it must run in the main page world (not the content script's isolated world).
+   * Inject umb-debug-ext.js as a <script type="module"> into the page so it runs
+   * in the main page world and can resolve @umbraco-cms/* via the page's import map.
    *
-   * We fetch the source and inject it inline rather than using script.src pointing
-   * at the extension URL. Firefox blocks moz-extension:// module scripts from
-   * importing non-extension URLs (i.e. those resolved via the page's import map).
-   * Inline modules are not subject to this restriction and still resolve bare
-   * @umbraco-cms/* specifiers through the page's import map.
+   * The two browsers require opposite strategies:
+   *
+   *   Chrome  — CSP on the Umbraco backoffice explicitly allows chrome-extension://
+   *             URLs in script-src, so script.src works. Inline scripts are blocked.
+   *
+   *   Firefox — moz-extension:// module scripts cannot import non-extension URLs
+   *             (i.e. anything resolved by the page's import map). Injecting the
+   *             source inline sidesteps this restriction; Firefox's Umbraco CSP
+   *             does not block inline scripts.
    *
    * Guarded so it only happens once per page load.
    */
@@ -47,18 +50,28 @@
     umbDebugExtInjected = true;
 
     const url = chrome.runtime.getURL('umb-debug-ext.js');
-    internalLog('[UmbDevTools] Fetching umb-debug-ext.js for inline injection:', url);
+    const isFirefox = navigator.userAgent.includes('Firefox');
 
-    fetch(url)
-      .then((r) => r.text())
-      .then((code) => {
-        const script = document.createElement('script');
-        script.type = 'module';
-        script.textContent = code;
-        (document.head || document.documentElement).appendChild(script);
-        internalLog('[UmbDevTools] umb-debug-ext.js injected inline OK');
-      })
-      .catch((e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
+    if (isFirefox) {
+      internalLog('[UmbDevTools] Firefox: fetching umb-debug-ext.js for inline injection');
+      fetch(url)
+        .then((r) => r.text())
+        .then((code) => {
+          const script = document.createElement('script');
+          script.type = 'module';
+          script.textContent = code;
+          (document.head || document.documentElement).appendChild(script);
+          internalLog('[UmbDevTools] umb-debug-ext.js injected inline OK');
+        })
+        .catch((e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
+    } else {
+      internalLog('[UmbDevTools] Chrome: injecting umb-debug-ext.js via src:', url);
+      const script = document.createElement('script');
+      script.type = 'module';
+      script.src = url;
+      script.addEventListener('error', (e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
+      (document.head || document.documentElement).appendChild(script);
+    }
   }
 
   // ── Umbraco Detection ────────────────────────────────────────────────────
@@ -489,7 +502,7 @@
 
   
   function internalLog(...args) {
-    console.log(...args);
+    //console.log(...args);
   }
 
 })();
