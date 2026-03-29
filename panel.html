@@ -21,31 +21,42 @@
             stroke-linecap="round"/>
     </svg>
     <h1>Umbraco Debug Tools</h1>
-    <div id="status-badge" class="not-detected">
-      <span class="dot"></span>
-      <span id="status-text">Checking…</span>
+    <div>
+      <div id="status-badge" class="btn not-detected">
+        <span class="dot"></span>
+        <span id="status-text">Checking…</span>
+      </div>
     </div>
   </div>
 
   <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
   <div id="toolbar">
-    <!-- Pick element -->
-    <button id="btn-pick" disabled title="Click an element in the page to inject umb-debug">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M1 1l5.5 13 2-5.5L14 6.5z"/>
-      </svg>
-      Select Element
-    </button>
+    <div>
+      <!-- Pick element -->
+      <button id="btn-pick" disabled title="Click an element in the page to inject umb-debug">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M1 1l5.5 13 2-5.5L14 6.5z"/>
+        </svg>
+        Select Element
+      </button>
 
-    <div id="toolbar-sep"></div>
+      <div id="toolbar-sep"></div>
 
-    <!-- Clear -->
-    <button id="btn-clear" disabled title="Remove injected umb-debug element">
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M2.343 13.657A8 8 0 1 1 13.657 2.343 8 8 0 0 1 2.343 13.657zM6.03 4.97 4.97 6.03 6.94 8l-1.97 1.97 1.06 1.06L8 9.06l1.97 1.97 1.06-1.06L9.06 8l1.97-1.97-1.06-1.06L8 6.94 6.03 4.97z"/>
-      </svg>
-      Clear
-    </button>
+      <!-- Clear -->
+      <button id="btn-clear" disabled title="Remove injected umb-debug element">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M2.343 13.657A8 8 0 1 1 13.657 2.343 8 8 0 0 1 2.343 13.657zM6.03 4.97 4.97 6.03 6.94 8l-1.97 1.97 1.06 1.06L8 9.06l1.97 1.97 1.06-1.06L9.06 8l1.97-1.97-1.06-1.06L8 6.94 6.03 4.97z"/>
+        </svg>
+        Clear
+      </button>
+    </div>
+
+    <div>
+      <a href="https://docs.umbraco.com/umbraco-cms/customizing/overview" target="_blank" class="btn detected no-border">
+        <span>Umbraco docs</span>
+      </a>
+    </div>
+
   </div>
 
   <!-- ── Loading bar ──────────────────────────────────────────────────── -->

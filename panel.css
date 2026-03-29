@@ -62,7 +62,7 @@ html, body {
 }
 
 /* ─── Status badge ──────────────────────────────────────────────────────── */
-#status-badge {
+.btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -74,16 +74,20 @@ html, body {
   border: 1px solid var(--border);
 }
 
-#status-badge .dot {
+.btn.no-border {
+  border:none;
+}
+
+.btn .dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--text-muted);
 }
 
-#status-badge.detected .dot  { background: var(--success); }
-#status-badge.detected       { border-color: var(--success); color: var(--success); }
-#status-badge.not-detected   { color: var(--text-muted); }
+.btn.detected .dot  { background: var(--success); }
+.btn.detected       { border-color: var(--success); color: var(--success); }
+.btn.not-detected   { color: var(--text-muted); }
 
 /* ─── Toolbar ───────────────────────────────────────────────────────────── */
 #toolbar {
@@ -94,6 +98,11 @@ html, body {
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  justify-content: space-between;
+}
+#toolbar > div {
+  gap: 6px;
+  display: flex;
 }
 
 button {

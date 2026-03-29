@@ -24,7 +24,6 @@ class UmbDebugElementExt extends UmbLitElement {
 
   constructor() {
 
-    console.log("here in constructor");
     super();
     this.visible = false;
     this.dialog = false;
@@ -36,7 +35,7 @@ class UmbDebugElementExt extends UmbLitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    console.log("connected callback");
+    this.#internalLog("connected callback");
     this.#update();
 
   }
@@ -63,10 +62,10 @@ class UmbDebugElementExt extends UmbLitElement {
   }
 
   #update() {
-    console.log("update called");
+    this.#internalLog("update called");
     this.dispatchEvent(
       new UmbContextDebugRequest((contexts) => {
-        console.log("callback with context...", contexts);
+        this.#internalLog("callback with context...", contexts);
         this._contexts = contexts;
         this.#exportContexts(contexts);
 
@@ -80,7 +79,7 @@ class UmbDebugElementExt extends UmbLitElement {
     var contextProps = { alias: contextAlias, props: {} };
 
     this.consumeContext(contextAlias, (contextBack) => {
-      console.log("Context kickback", {contextAlias, contextBack});
+      this.#internalLog("Context kickback", {contextAlias, contextBack});
       if(!contextBack){
         return;
       }
@@ -94,9 +93,9 @@ class UmbDebugElementExt extends UmbLitElement {
         const val = contextBack[key];
 
         if (val && typeof val.subscribe === 'function') {
-          console.log(`[Observable found] ${key}`);
+          this.#internalLog(`[Observable found] ${key}`);
           this.observe(val, (value) => {
-            console.log("I'm observing!", {key, value});
+            this.#internalLog("I'm observing!", {key, value});
             contextProps.props[key] = this.#safeValue(value, 0);
             this.#updateContextAttribute(contextProps);
           });
@@ -110,7 +109,7 @@ class UmbDebugElementExt extends UmbLitElement {
   }
 
   #updateContextAttribute(contextProps) {
-    console.log("Check the data out and push", contextProps);
+    this.#internalLog("Check the data out and push", contextProps);
     try {
 
       clearTimeout(this.callbackTimeoutId);
@@ -153,10 +152,10 @@ class UmbDebugElementExt extends UmbLitElement {
       });
       var s = JSON.stringify(serialized);
       this.setAttribute('data-umb-debug-contexts', JSON.stringify(serialized));
-      console.log("Serialised the ocntexts", s);
+      this.#internalLog("Serialised the ocntexts", s);
     } catch (ex) {
       // Ignore serialization errors
-      console.log("Unable to add attr", ex)
+      this.#internalLog("Unable to add attr", ex)
     }
   }
 
@@ -185,6 +184,10 @@ class UmbDebugElementExt extends UmbLitElement {
     if (this._debugPaneOpen) {
       this.#update();
     }
+  }
+
+  #internalLog(...args) {
+    //console.log(...args);
   }
 
   render() {

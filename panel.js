@@ -27,12 +27,12 @@
 
   // ── Message handler ──────────────────────────────────────────────────────
   function handleMessage(msg) {
-    console.log('[UmbDevTools panel] Received message:', msg.type, msg);
+    internalLog('[UmbDevTools panel] Received message:', msg.type, msg);
     switch (msg.type) {
 
       // Response to detect-umbraco
       case 'detect-umbraco-response':
-        console.log("received detected callback...", msg);
+        internalLog("received detected callback...", msg);
         setStatus(msg.detected ? 'detected' : 'not-detected');
         if (msg.detected) {
           clearInterval(detectionTask);
@@ -84,12 +84,12 @@
         break;
 
       case 'get-context-info':
-        console.log("[get-context-info] We got a message back...", msg);
+        internalLog("[get-context-info] We got a message back...", msg);
         
         break;
 
       case 'contextData':
-        console.log("[ContextData] Arrived in panel", msg);
+        internalLog("[ContextData] Arrived in panel", msg);
         if (msg.contextData) {
           var id = 'ctx-parent_' + msg.alias;
           var div = document.getElementById(id);
@@ -102,11 +102,11 @@
   }
 
   function sendToContent(msg) {
-    console.log('[UmbDevTools panel] sendToContent →', msg.type, port);
+    internalLog('[UmbDevTools panel] sendToContent →', msg.type, port);
     try {
       port.postMessage(msg);
     } catch (err) {
-      console.log("PORT FAILED, reconnecting:", err);
+      internalLog("PORT FAILED, reconnecting:", err);
       port = connectPort();
       port.postMessage(msg);
     }
@@ -146,7 +146,7 @@
 
   // Re-detect when the user navigates to a new page
   chrome.devtools.network.onNavigated.addListener(() => {
-    console.log("navigated HEY");
+    internalLog("navigated HEY");
     reset();
     detectUmbraco();
   });
@@ -175,7 +175,7 @@
   }
 
   function setStatus(state) {
-    statusBadge.className = '';
+    statusBadge.className = 'btn';
     if (state === 'checking') {
       statusText.textContent = 'Checking…';
       emptyMessage.innerHTML = 'Currently looking for your Umbraco instance...';
@@ -453,7 +453,7 @@ function escapeHtml(str) {
    * @param {Array<{alias, type, methods?, properties?, value?}>} contexts
    */
   function renderUmbExtContexts(contexts) {
-    console.log('[UmbDevTools panel] renderUmbExtContexts — count:', contexts?.length, contexts);
+    internalLog('[UmbDevTools panel] renderUmbExtContexts — count:', contexts?.length, contexts);
     showEmpty(false);
     outputPanel.classList.remove('hidden');
     treeView.innerHTML = '';
@@ -623,5 +623,11 @@ function escapeHtml(str) {
 
   function buildCopyText(output) {
     return JSON.stringify(output.contexts, null, 2);
+  }
+
+  
+  
+  function internalLog(...args) {
+    //console.log(...args);
   }
 })();

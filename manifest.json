@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Umbraco Debug Tools",
-  "version": "1.0.0",
-  "description": "DevTools extension for Umbraco development — inspect element contexts using umb-debug.",
+  "version": "0.0.1",
+  "version_name": "0.0.1 beta",
+  "description": "A devtools extension for inspecting Umbraco element contexts, aiding with Umbraco development.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

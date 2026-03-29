@@ -40,12 +40,12 @@
     umbDebugExtInjected = true;
 
     const url = chrome.runtime.getURL('umb-debug-ext.js');
-    console.log('[UmbDevTools] Injecting umb-debug-ext.js as module script:', url);
+    internalLog('[UmbDevTools] Injecting umb-debug-ext.js as module script:', url);
 
     const script = document.createElement('script');
     script.type = 'module';
     script.src = url;
-    script.addEventListener('load', () => console.log('[UmbDevTools] umb-debug-ext.js loaded OK'));
+    script.addEventListener('load', () => internalLog('[UmbDevTools] umb-debug-ext.js loaded OK'));
     script.addEventListener('error', (e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
     (document.head || document.documentElement).appendChild(script);
   }
@@ -54,7 +54,7 @@
 
   function detectUmbraco() {
     // Umbraco 14+ (Bellissima) — Lit-based web components
-    console.log("Document in content.js", document);
+    internalLog("Document in content.js", document);
     if (document.querySelector('umb-app, umb-backoffice')) return true;
 
     // Any custom element with umb- prefix rendered in the page
@@ -296,7 +296,7 @@
   };
 
   function injectExtDebug(targetEl) {
-    console.log('[UmbDevTools] injectExtDebug — target:', targetEl.tagName, targetEl.id || '(no id)');
+    internalLog('[UmbDevTools] injectExtDebug — target:', targetEl.tagName, targetEl.id || '(no id)');
 
     const extEl = document.createElement('umb-debug-ext');
     extEl.setAttribute('data-umb-devtools-debug', 'true');
@@ -307,14 +307,14 @@
 
     injectedDebugEl = extEl;
 
-    console.log('[UmbDevTools] <umb-debug-ext> inserted into DOM. Constructor tag:', extEl.constructor?.name ?? '(unknown — not yet upgraded)');
-    console.log('[UmbDevTools] Has data-umb-debug-contexts immediately?', extEl.hasAttribute('data-umb-debug-contexts'));
+    internalLog('[UmbDevTools] <umb-debug-ext> inserted into DOM. Constructor tag:', extEl.constructor?.name ?? '(unknown — not yet upgraded)');
+    internalLog('[UmbDevTools] Has data-umb-debug-contexts immediately?', extEl.hasAttribute('data-umb-debug-contexts'));
 
     // The page world upgrades the element and its constructor calls #update()
     // which sets data-umb-debug-contexts once contexts are collected.
     // Check immediately in case upgrade was synchronous.
     if (extEl.hasAttribute('data-umb-debug-contexts')) {
-      console.log('[UmbDevTools] Attribute already present — reading immediately');
+      internalLog('[UmbDevTools] Attribute already present — reading immediately');
       sendExtContextData(extEl);
       return;
     }
@@ -322,14 +322,14 @@
     // Watch for the attribute via MutationObserver (works across the
     // content-script/page-world boundary since the DOM is shared).
     extObserver = new MutationObserver((mutations) => {
-      console.log('[UmbDevTools] MutationObserver fired, mutations:', mutations.map(m => `${m.attributeName}=${extEl.getAttribute(m.attributeName)?.slice(0, 40)}`));
+      internalLog('[UmbDevTools] MutationObserver fired, mutations:', mutations.map(m => `${m.attributeName}=${extEl.getAttribute(m.attributeName)?.slice(0, 40)}`));
       if (extEl.hasAttribute('data-umb-debug-contexts')) {
         clearExtWatcher();
         sendExtContextData(extEl);
       }
     });
     extObserver.observe(extEl, { attributes: true, attributeFilter: ['data-umb-debug-contexts'] });
-    console.log('[UmbDevTools] MutationObserver watching for data-umb-debug-contexts');
+    internalLog('[UmbDevTools] MutationObserver watching for data-umb-debug-contexts');
 
     // If umb-debug-ext never sets the attribute (e.g. module failed to load,
     // or element is outside an Umbraco context tree), report an error.
@@ -346,10 +346,10 @@
 
   function sendExtContextData(extEl) {
     const raw = extEl.getAttribute('data-umb-debug-contexts');
-    console.log('[UmbDevTools] sendExtContextData — raw attribute length:', raw?.length, 'preview:', raw?.slice(0, 100));
+    internalLog('[UmbDevTools] sendExtContextData — raw attribute length:', raw?.length, 'preview:', raw?.slice(0, 100));
     try {
       const contexts = JSON.parse(raw);
-      console.log('[UmbDevTools] Parsed', contexts.length, 'contexts:', contexts.map(c => c.alias));
+      internalLog('[UmbDevTools] Parsed', contexts.length, 'contexts:', contexts.map(c => c.alias));
       sendToPanel({ type: 'ext-context-data', contexts });
     } catch (e) {
       console.error('[UmbDevTools] Failed to parse context data:', e);
@@ -376,7 +376,7 @@
   // ── Messaging ────────────────────────────────────────────────────────────
 
   function sendToPanel(msg) {
-    console.log('[UmbDevTools] sendToPanel:', msg.type, msg);
+    internalLog('[UmbDevTools] sendToPanel:', msg.type, msg);
     try {
       chrome.runtime.sendMessage(msg);
     } catch (e) {
@@ -388,7 +388,7 @@
 
   // List for messages through the DOM, so we can pass them through to the panel
   window.addEventListener('message', (event) => {
-    console.log("Received message on window message bus", event);
+    internalLog("Received message on window message bus", event);
     if (event.source !== window) return;
     if (event.data?.type === 'contextData') {
 
@@ -400,16 +400,16 @@
     switch (msg.type) {
       case 'detect-umbraco': {
         const detected = detectUmbraco();
-        console.log('[UmbDevTools] detect-umbraco result:', detected);
+        internalLog('[UmbDevTools] detect-umbraco result:', detected);
         if (detected) injectUmbDebugExt();
         sendResponse({ type: 'detect-umbraco-response', detected });
         break;
       }
 
       case 'start-pick':
-        console.log('[UmbDevTools content] start-pick received, isPicking:', isPicking);
+        internalLog('[UmbDevTools content] start-pick received, isPicking:', isPicking);
         startPickMode();
-        console.log('[UmbDevTools content] startPickMode called, isPicking now:', isPicking);
+        internalLog('[UmbDevTools content] startPickMode called, isPicking now:', isPicking);
         sendResponse({ ok: true });
         break;
 
@@ -438,7 +438,7 @@
         break;
 
       case 'get-context-info':
-        console.log('hoveredEl', { msgAlias: msg.alias, previousElement });
+        internalLog('hoveredEl', { msgAlias: msg.alias, previousElement });
         // Due to the way that the content runs in isolation we don't have the benefit of being able
         // to call functions on the web component directly, so we do it through attribute watching
         previousElement.setAttribute('data-umb-command', JSON.stringify({ method: 'test', args: [msg.alias] }));
@@ -446,7 +446,7 @@
         // setTimeout(function () {
         //   // var contextInfo = injectedDebugEl.getAttribute('data-umb-context-data');
         //   const contextData = JSON.parse(injectedDebugEl.getAttribute('data-umb-context-data'));
-        //   console.log("sending a response", contextData);
+        //   internalLog("sending a response", contextData);
 
         //   sendToPanel({ type: 'get-context-info', alias: msg.alias, contextData });
 
@@ -457,7 +457,7 @@
         // const observer = new MutationObserver((mutations) => {
         //   mutations.forEach(mutation => {
         //     if (mutation.type === 'attributes') {
-        //       console.log(`Attribute "${mutation.attributeName}" changed to:`, el.getAttribute(mutation.attributeName));
+        //       internalLog(`Attribute "${mutation.attributeName}" changed to:`, el.getAttribute(mutation.attributeName));
         //     }
         //   });
         // });
@@ -475,4 +475,10 @@
     // Return true to keep the channel open for async responses
     return true;
   });
+
+  
+  function internalLog(...args) {
+    //console.log(...args);
+  }
+
 })();

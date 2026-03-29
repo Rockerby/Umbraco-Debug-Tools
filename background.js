@@ -11,7 +11,7 @@ const panelConnections = new Map();
 
 chrome.runtime.onConnect.addListener((port) => {
   // Ports are named "devtools-<tabId>"
-  console.log("[background.js] Listening with Port ", port);
+  internalLog("[background.js] Listening with Port ", port);
   if (!port.name.startsWith('devtools-')) return;
 
   const tabId = parseInt(port.name.replace('devtools-', ''), 10);
@@ -19,15 +19,15 @@ chrome.runtime.onConnect.addListener((port) => {
 
   // Forward panel messages to the content script in the inspected tab
   port.onMessage.addListener((msg) => {
-    console.log("[background.js] Forwarding to tab", tabId, msg.type);
+    internalLog("[background.js] Forwarding to tab", tabId, msg.type);
     chrome.tabs.sendMessage(tabId, msg).then((response) => {
-      console.log("[background.js] Response from tab for", msg.type, response);
+      internalLog("[background.js] Response from tab for", msg.type, response);
       if (response) port.postMessage(response);
     }).catch((err) => {
       // "Receiving end does not exist" is expected when the content script
       // hasn't loaded yet (e.g. page still loading, or non-Umbraco page).
       if (!err.message?.includes('Receiving end does not exist')) {
-        console.log("[background.js] Error sending message ", err);
+        internalLog("[background.js] Error sending message ", err);
       }
     });
   });
@@ -46,3 +46,8 @@ chrome.runtime.onMessage.addListener((msg, sender) => {
   }
   return false;
 });
+
+
+function internalLog(...args) {
+  //console.log(...args);
+}
