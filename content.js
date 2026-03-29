@@ -30,9 +30,16 @@
   let umbDebugExtInjected = false;
 
   /**
-   * Inject umb-debug-ext.js as a <script type="module"> into the page.
+   * Inject umb-debug-ext.js as an inline <script type="module"> into the page.
    * The script uses the page's import map to resolve @umbraco-cms/* modules,
    * so it must run in the main page world (not the content script's isolated world).
+   *
+   * We fetch the source and inject it inline rather than using script.src pointing
+   * at the extension URL. Firefox blocks moz-extension:// module scripts from
+   * importing non-extension URLs (i.e. those resolved via the page's import map).
+   * Inline modules are not subject to this restriction and still resolve bare
+   * @umbraco-cms/* specifiers through the page's import map.
+   *
    * Guarded so it only happens once per page load.
    */
   function injectUmbDebugExt() {
@@ -40,14 +47,18 @@
     umbDebugExtInjected = true;
 
     const url = chrome.runtime.getURL('umb-debug-ext.js');
-    internalLog('[UmbDevTools] Injecting umb-debug-ext.js as module script:', url);
+    internalLog('[UmbDevTools] Fetching umb-debug-ext.js for inline injection:', url);
 
-    const script = document.createElement('script');
-    script.type = 'module';
-    script.src = url;
-    script.addEventListener('load', () => internalLog('[UmbDevTools] umb-debug-ext.js loaded OK'));
-    script.addEventListener('error', (e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
-    (document.head || document.documentElement).appendChild(script);
+    fetch(url)
+      .then((r) => r.text())
+      .then((code) => {
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.textContent = code;
+        (document.head || document.documentElement).appendChild(script);
+        internalLog('[UmbDevTools] umb-debug-ext.js injected inline OK');
+      })
+      .catch((e) => console.error('[UmbDevTools] umb-debug-ext.js FAILED to load', e));
   }
 
   // ── Umbraco Detection ────────────────────────────────────────────────────
@@ -478,7 +489,7 @@
 
   
   function internalLog(...args) {
-    //console.log(...args);
+    console.log(...args);
   }
 
 })();

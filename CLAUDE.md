@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Chrome DevTools extension (Manifest V3) for inspecting Umbraco Backoffice element contexts. It injects `<umb-debug>` custom elements into selected page elements and renders the resulting context data as a collapsible JSON tree in a DevTools panel.
+This is a browser DevTools extension (Manifest V3) for inspecting Umbraco Backoffice element contexts. It injects `<umb-debug>` custom elements into selected page elements and renders the resulting context data as a collapsible JSON tree in a DevTools panel.
 
 Supports both Umbraco 14+ (Bellissima/Lit web components) and Umbraco 9–13 (AngularJS-based).
+
+Works in Chrome (using `manifest.json`) and Firefox 109+ (using `manifest_firefox.json` — copy it to `manifest.json` before loading in Firefox).
 
 ## Setup
 
@@ -19,6 +21,11 @@ Load the extension in Chrome:
 1. Open `chrome://extensions`
 2. Enable **Developer mode**
 3. Click **Load unpacked** and select this directory
+
+Load the extension in Firefox:
+1. Copy `manifest_firefox.json` to `manifest.json` (Firefox always reads `manifest.json`)
+2. Open `about:debugging` → **This Firefox**
+3. Click **Load Temporary Add-on…** and select `manifest.json`
 
 There is no build step, no package manager, no transpilation — this is plain JavaScript loaded directly by Chrome.
 

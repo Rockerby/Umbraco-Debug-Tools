@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Umbraco Debug Tools",
+  "version": "0.0.1",
+  "description": "A devtools extension for inspecting Umbraco element contexts, aiding with Umbraco development.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "umbraco-debug-tools@devtools",
+      "strict_min_version": "109.0"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "devtools_page": "devtools.html",
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": ["scripting", "activeTab"],
+  "host_permissions": ["<all_urls>"],
+  "web_accessible_resources": [
+    {
+      "resources": ["umb-debug-ext.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

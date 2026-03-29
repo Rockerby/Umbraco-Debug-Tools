@@ -1,6 +1,6 @@
-# Umbraco Debug Tools — Chrome Extension
+# Umbraco Debug Tools — Browser Extension
 
-A Chrome DevTools extension for inspecting **Umbraco Backoffice** element contexts.
+A DevTools extension for inspecting **Umbraco Backoffice** element contexts. Works in Chrome and Firefox.
 
 ## What it does
 
@@ -14,12 +14,30 @@ Works with:
 
 ## Installation
 
+### Chrome
+
 1. Clone / download this repository.
 2. Run `python3 generate-icons.py` to create the icons (or use the pre-generated ones in `icons/`).
 3. Open Chrome → `chrome://extensions`.
 4. Enable **Developer mode** (top-right toggle).
 5. Click **Load unpacked** and select this folder.
 6. Open any Umbraco back office, open Chrome DevTools (`F12`), and go to the **Umbraco Debug** tab.
+
+### Firefox (109+)
+
+Firefox requires `manifest_firefox.json` to be named `manifest.json` when loading the extension, because Firefox always reads `manifest.json`. The simplest approach:
+
+1. Clone / download this repository.
+2. Copy `manifest_firefox.json` over `manifest.json` (keep a backup of the original if you also use Chrome):
+   ```bash
+   cp manifest.json manifest_chrome.json
+   cp manifest_firefox.json manifest.json
+   ```
+3. Open Firefox → `about:debugging` → **This Firefox**.
+4. Click **Load Temporary Add-on…** and select the `manifest.json` file inside this folder.
+5. Open any Umbraco back office, open Firefox DevTools (`F12`), and go to the **Umbraco Debug** tab.
+
+> **Note:** Temporary add-ons in Firefox are removed when the browser closes. For a persistent install, the extension would need to be signed via [addons.mozilla.org](https://addons.mozilla.org).
 
 ## Usage
 
@@ -60,14 +78,15 @@ The **Raw HTML** tab shows the raw markup rendered by `<umb-debug>`.
 ## File structure
 
 ```
-manifest.json        MV3 manifest
-devtools.html        DevTools entry page
-devtools.js          Creates the DevTools panel tab
-background.js        Service worker (message bridge)
-content.js           Injected into every page
-panel.html           DevTools panel markup
-panel.css            Panel styles (dark theme)
-panel.js             Panel logic & JSON tree renderer
-generate-icons.py    Script to regenerate icons from source
-icons/               icon16/32/48/128.png
+manifest.json          MV3 manifest (Chrome)
+manifest_firefox.json  MV3 manifest (Firefox 109+)
+devtools.html          DevTools entry page
+devtools.js            Creates the DevTools panel tab
+background.js          Service worker / background script (message bridge)
+content.js             Injected into every page
+panel.html             DevTools panel markup
+panel.css              Panel styles (dark theme)
+panel.js               Panel logic & JSON tree renderer
+generate-icons.py      Script to regenerate icons from source
+icons/                 icon16/32/48/128.png
 ```
